@@ -27,8 +27,23 @@ import MuseScore.Project
 ScoresView {
     id: root
 
+    //! Another folder than the scores folder (the Drive folder), with its subfolders
+    property string folder: ""
+    property bool showCreateNew: true
+    //! More actions for each score, handled by the user of the view (extraScoreActionRequested)
+    property var moreScoreActions: []
+
+    signal extraScoreActionRequested(string actionId, string scorePath)
+
+    function reload() {
+        libraryScoresModel.reload()
+    }
+
     LibraryScoresModel {
         id: libraryScoresModel
+
+        folder: root.folder
+        showCreateNew: root.showCreateNew
     }
 
     Component.onCompleted: {
@@ -39,7 +54,7 @@ ScoresView {
         { id: "duplicate", title: qsTrc("project", "Duplicate") },
         { id: "rename", title: qsTrc("project", "Rename…") },
         { id: "delete", title: qsTrc("global", "Delete") }
-    ]
+    ].concat(root.moreScoreActions)
 
     function handleScoreAction(actionId, scorePath) {
         switch (actionId) {
@@ -54,6 +69,9 @@ ScoresView {
             break
         case "delete":
             Qt.callLater(libraryScoresModel.deleteScore, scorePath)
+            break
+        default:
+            root.extraScoreActionRequested(actionId, scorePath)
             break
         }
     }

@@ -265,6 +265,9 @@
 
 #ifdef MUE_CONFIGURATION_IS_APPMOBILE
 #include "mobile/mobilemodule.h"
+#ifndef Q_OS_WASM
+#include "drive/drivemodule.h"
+#endif
 #endif
 
 #ifdef MUE_BUILD_PROJECT_MODULE
@@ -423,6 +426,9 @@ std::shared_ptr<muse::IApplication> AppFactory::newGuiApp(const CmdOptions& opti
 
 #ifdef MUE_CONFIGURATION_IS_APPMOBILE
     app->addModule(new mu::mobile::MobileModule());
+#ifndef Q_OS_WASM
+    app->addModule(new mu::drive::DriveModule());
+#endif
 #endif
 
     return app;

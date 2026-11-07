@@ -39,6 +39,11 @@ class LibraryScoresModel : public AbstractScoresModel, public muse::async::Async
     Q_OBJECT
     QML_ELEMENT
 
+    //! Another folder than the scores folder (e.g. the Drive folder), with its subfolders. Set before load()
+    Q_PROPERTY(QString folder READ folder WRITE setFolder NOTIFY folderChanged)
+    //! The "New score" item (it creates the score in the scores folder)
+    Q_PROPERTY(bool showCreateNew READ showCreateNew WRITE setShowCreateNew NOTIFY folderChanged)
+
     muse::GlobalInject<IProjectConfiguration> configuration;
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
     muse::ContextInject<IRecentFilesController> recentFilesController = { this };
@@ -49,6 +54,14 @@ public:
     explicit LibraryScoresModel(QObject* parent = nullptr);
 
     void load() override;
+
+    QString folder() const;
+    void setFolder(const QString& folder);
+    bool showCreateNew() const;
+    void setShowCreateNew(bool show);
+
+    //! Reads the folder again (e.g. after a sync)
+    Q_INVOKABLE void reload();
     QList<int> nonScoreItemIndices() const override;
 
     //! The name of the score without the extension
@@ -59,9 +72,15 @@ public:
     Q_INVOKABLE void duplicateScore(const QString& scorePath);
     Q_INVOKABLE void deleteScore(const QString& scorePath);
 
+signals:
+    void folderChanged();
+
 private:
     void update();
     bool isOpen(const muse::io::path_t& path) const;
     void showScoreIsOpenMessage();
+
+    QString m_folder;
+    bool m_showCreateNew = true;
 };
 }

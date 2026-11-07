@@ -48,6 +48,7 @@ FocusScope {
         case "newAndRecent": scoresPageModel.tabIndex = 0; break
         case "myOnlineScores":
         case "library": scoresPageModel.tabIndex = 1; break
+        case "drive": scoresPageModel.tabIndex = drive.isAvailable ? 2 : 1; break
         }
     }
 
@@ -61,6 +62,15 @@ FocusScope {
                 root.forceActiveFocus()
             }
         }
+    }
+
+    //! The shared Google Drive folder of scores (VibeScore on Android): a third tab
+    DriveModel {
+        id: drive
+
+        readonly property bool isReady: isAvailable && (state === "idle" || state === "syncing")
+
+        Component.onCompleted: load()
     }
 
     ScoresPageModel {
@@ -148,6 +158,7 @@ FocusScope {
 
             // "New & recent" alone needs no tab bar
             readonly property bool hasSecondTab: scoresPageModel.isCloudAvailable || scoresPageModel.isLibraryAvailable
+                                                 || drive.isAvailable
             opacity: hasSecondTab ? 1 : 0
             enabled: hasSecondTab
 
@@ -187,6 +198,18 @@ FocusScope {
                 navigation.name: scoresPageModel.isCloudAvailable ? "MyOnlineScores" : "Library"
                 navigation.panel: navTabPanel
                 navigation.column: 2
+            }
+
+            StyledTabButton {
+                visible: drive.isAvailable
+                width: visible ? implicitWidth : 0
+
+                text: qsTrc("project", "Drive")
+
+                navigation.name: "Drive"
+                navigation.panel: navTabPanel
+                navigation.column: 3
+                navigation.enabled: visible
             }
         }
 
@@ -261,7 +284,11 @@ FocusScope {
                 return null
             }
 
-            return [newAndRecentComp, scoresPageModel.isCloudAvailable ? onlineScoresComp : libraryComp][tabBar.currentIndex]
+            const comps = [newAndRecentComp, scoresPageModel.isCloudAvailable ? onlineScoresComp : libraryComp]
+            if (drive.isAvailable) {
+                comps.push(driveComp)
+            }
+            return comps[tabBar.currentIndex] ?? null
         }
     }
 
@@ -304,6 +331,14 @@ FocusScope {
         LibraryScoresView {
             anchors.fill: parent
 
+            moreScoreActions: drive.isReady ? [ { id: "copyToDrive", title: qsTrc("project", "Copy to Drive") } ] : []
+
+            onExtraScoreActionRequested: function(actionId, scorePath) {
+                if (actionId === "copyToDrive") {
+                    Qt.callLater(drive.copyToDrive, scorePath)
+                }
+            }
+
             viewType: scoresPageModel.viewType
             searchText: searchField.searchText
             backgroundColor: background.color
@@ -315,6 +350,32 @@ FocusScope {
             onCreateNewScoreRequested: {
                 scoresPageModel.createNewScore()
             }
+
+            onOpenScoreRequested: function(scorePath, displayName) {
+                Qt.callLater(scoresPageModel.openScore, scorePath, displayName)
+            }
+
+            onRevealInFileBrowserRequested: function(scorePath) {
+                Qt.callLater(scoresPageModel.revealInFileBrowser, scorePath)
+            }
+        }
+    }
+
+    Component {
+        id: driveComp
+
+        DriveScoresView {
+            anchors.fill: parent
+
+            driveModel: drive
+
+            viewType: scoresPageModel.viewType
+            searchText: searchField.searchText
+            backgroundColor: background.color
+            sideMargin: prv.sideMargin
+
+            navigationSection: navSec
+            navigationOrder: 4
 
             onOpenScoreRequested: function(scorePath, displayName) {
                 Qt.callLater(scoresPageModel.openScore, scorePath, displayName)

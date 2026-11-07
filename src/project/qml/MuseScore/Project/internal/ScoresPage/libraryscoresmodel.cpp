@@ -52,16 +52,60 @@ void LibraryScoresModel::load()
 
 QList<int> LibraryScoresModel::nonScoreItemIndices() const
 {
+    if (!m_showCreateNew) {
+        return { rowCount() - 1 };
+    }
     return { 0, rowCount() - 1 };
+}
+
+QString LibraryScoresModel::folder() const
+{
+    return m_folder;
+}
+
+void LibraryScoresModel::setFolder(const QString& folder)
+{
+    if (m_folder == folder) {
+        return;
+    }
+    m_folder = folder;
+    emit folderChanged();
+}
+
+bool LibraryScoresModel::showCreateNew() const
+{
+    return m_showCreateNew;
+}
+
+void LibraryScoresModel::setShowCreateNew(bool show)
+{
+    if (m_showCreateNew == show) {
+        return;
+    }
+    m_showCreateNew = show;
+    emit folderChanged();
+}
+
+void LibraryScoresModel::reload()
+{
+    update();
 }
 
 void LibraryScoresModel::update()
 {
-    const io::path_t folder = configuration()->userProjectsPath();
-    RetVal<io::paths_t> files = fileSystem()->scanFiles(folder, SCORE_FILTERS, io::ScanMode::FilesInCurrentDir);
+    // The scores folder alone: its subfolders are other folders (the Drive folder, ...).
+    // Another folder with its subfolders, but not the hidden ones (the sync's own files)
+    const bool otherFolder = !m_folder.isEmpty();
+    const io::path_t folder = otherFolder ? io::path_t(m_folder) : configuration()->userProjectsPath();
+    RetVal<io::paths_t> files = fileSystem()->scanFiles(folder, SCORE_FILTERS,
+                                                        otherFolder ? io::ScanMode::FilesInCurrentDirAndSubdirs
+                                                        : io::ScanMode::FilesInCurrentDir);
 
     std::vector<std::pair<QDateTime, io::path_t> > scores;
     for (const io::path_t& path : files.val) {
+        if (otherFolder && path.toQString().mid(m_folder.size()).contains(QStringLiteral("/."))) {
+            continue;
+        }
         scores.emplace_back(fileSystem()->lastModified(path).toQDateTime(), path);
     }
 
@@ -73,12 +117,14 @@ void LibraryScoresModel::update()
     std::vector<QVariantMap> items;
     items.reserve(scores.size() + 2);
 
-    QVariantMap addItem;
-    addItem[NAME_KEY] = muse::qtrc("project", "New score");
-    addItem[IS_CREATE_NEW_KEY] = true;
-    addItem[IS_NO_RESULTS_FOUND_KEY] = false;
-    addItem[IS_CLOUD_KEY] = false;
-    items.push_back(addItem);
+    if (m_showCreateNew) {
+        QVariantMap addItem;
+        addItem[NAME_KEY] = muse::qtrc("project", "New score");
+        addItem[IS_CREATE_NEW_KEY] = true;
+        addItem[IS_NO_RESULTS_FOUND_KEY] = false;
+        addItem[IS_CLOUD_KEY] = false;
+        items.push_back(addItem);
+    }
 
     for (const auto& [modified, path] : scores) {
         const std::string suffix = io::suffix(path);
