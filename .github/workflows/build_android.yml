@@ -148,7 +148,7 @@ jobs:
 
       - name: Check 16 KB page alignment
         run: |
-          LIB="$(find build-android/android-build -name 'libVibeScore_*.so' | head -1)"
+          LIB="$(find build-android/src/app build-android/android-build -maxdepth 6 -name 'libVibeScore_*.so' 2>/dev/null | head -1)"
           "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -l "$LIB" | grep LOAD | awk '{ print $NF }' | sort -u
 
       - name: Upload APK
@@ -161,7 +161,8 @@ jobs:
       # The library with its symbol table: turns the offsets of a crash report into function names
       - name: Keep the symbols
         run: |
-          LIB="$(find build-android/android-build -name 'libVibeScore_*.so' | head -1)"
+          LIB="$(find build-android/src/app build-android/android-build -maxdepth 6 -name 'libVibeScore_*.so' 2>/dev/null | head -1)"
+          test -n "$LIB"
           xz -T0 -6 -c "$LIB" > "VibeScore-${{ inputs.abi || 'arm64' }}-symbols.so.xz"
           ls -la VibeScore-*-symbols.so.xz
 
