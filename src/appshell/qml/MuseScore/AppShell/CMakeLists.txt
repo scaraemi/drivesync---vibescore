@@ -161,5 +161,6 @@ qt_add_resources(appshell_qml appshell_qml_resources
 target_include_directories(appshell_qml PRIVATE
     DevTools/Settings
     FirstLaunchSetup
+    HomePage
     PublishPage
 )
