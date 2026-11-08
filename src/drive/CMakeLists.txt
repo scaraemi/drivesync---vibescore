@@ -13,8 +13,9 @@ set(VS_DRIVE_FOLDER_ID "" CACHE STRING "Drive folder used until the user chooses
 
 # CI passes them as environment variables too (repository secrets)
 foreach(VAR VS_DRIVE_CLIENT_ID VS_DRIVE_CLIENT_SECRET VS_DRIVE_FOLDER_ID)
-    if ("${${VAR}}" STREQUAL "" AND DEFINED ENV{${VAR}})
-        set(${VAR} "$ENV{${VAR}}")
+    if ("${${VAR}}" STREQUAL "" AND NOT "$ENV{${VAR}}" STREQUAL "")
+        # In the cache: the MSI packaging configures the build again, without these variables
+        set(${VAR} "$ENV{${VAR}}" CACHE STRING "" FORCE)
     endif()
 endforeach()
 

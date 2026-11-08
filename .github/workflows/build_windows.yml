@@ -47,6 +47,11 @@ on:
         default: ""
         type: string
         required: false
+      msi:
+        description: "Package a development build as an .msi installer (Drive releases)"
+        default: false
+        type: boolean
+        required: false
 
 jobs:
   windows_x64:
@@ -200,13 +205,22 @@ jobs:
         ccache -sv
     - name: Package
       shell: cmd
+      env:
+        VS_DRIVE_CLIENT_ID: ${{ secrets.VS_DRIVE_CLIENT_ID }}
+        VS_DRIVE_CLIENT_SECRET: ${{ secrets.VS_DRIVE_CLIENT_SECRET }}
+        VS_DRIVE_FOLDER_ID: ${{ secrets.VS_DRIVE_FOLDER_ID }}
       run: |
         IF ${{ secrets.WIN_SIGN_S3_SECRET != 0 }} == true ( SET S_S=${{ secrets.WIN_SIGN_S3_SECRET }} ) ELSE ( SET S_S="''" )
         IF ${{ secrets.WIN_SIGN_S3_KEY != 0 }} == true ( SET S_K=${{ secrets.WIN_SIGN_S3_KEY }} ) ELSE ( SET S_K="''" )
         IF ${{ env.BUILD_MODE }} == stable ( SET GUID=${{ secrets.WIN_MSI_STABLE_MU4_GUID }} ) ELSE ( SET GUID=${{ secrets.WIN_MSI_TESTING_MU4_GUID }} )
         :: Drive builds: a fixed upgrade code, so that a new installer replaces the previous one
         IF "%GUID%" == "" SET GUID=AA03C2FC-F56D-4163-9D79-F991B1E3838D
-        buildscripts\ci\windows\package.bat --signsecret %S_S% --signkey %S_K% --guid %GUID%
+        :: Drive releases: an installer also for a development build (package.bat makes a .7z for those)
+        SET PACK_MODE=
+        IF "${{ inputs.msi }}" == "true" SET PACK_MODE=-m testing
+        CALL buildscripts\ci\windows\package.bat %PACK_MODE% --signsecret %S_S% --signkey %S_K% --guid %GUID%
+        :: No WiX on the runner: fall back to the .7z archive
+        IF ERRORLEVEL 1 IF NOT "%PACK_MODE%" == "" CALL buildscripts\ci\windows\package.bat --signsecret %S_S% --signkey %S_K% --guid %GUID%
     - name: Checksum
       run: |
         bash ./buildscripts/ci/tools/checksum.sh
