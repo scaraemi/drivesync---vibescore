@@ -1793,21 +1793,14 @@ void NotationViewInputController::dragMoveEvent(QDragMoveEvent* event)
 
 void NotationViewInputController::dragLeaveEvent(QDragLeaveEvent*)
 {
-    if (!uiConfiguration()->isSystemDragSupported()) {
-        dropEvent(m_lastDragMoveEvent);
-    }
-
+    // Leaving the score is not a drop, also without system drag (mobile): the palettes drop explicitly where
+    // the finger is lifted, and a drag moved away from the score (or cancelled) must not change it
     viewInteraction()->endDrop();
     m_mouseDownInfo.dragAction = MouseDownInfo::Nothing;
 }
 
 void NotationViewInputController::dropEvent(QDropEvent* event)
 {
-    if (!uiConfiguration()->isSystemDragSupported()) {
-        event->setAccepted(false);
-        return;
-    }
-
     DragMoveEvent de = {
         event->position(),
         event->modifiers(),
@@ -1815,7 +1808,10 @@ void NotationViewInputController::dropEvent(QDropEvent* event)
         event->source()
     };
 
-    bool isAccepted = dropEvent(de, event->mimeData());
+    // Without system drag the data is with the drag controller (as in dragEnterEvent and dragMoveEvent)
+    const QMimeData* mimeData = uiConfiguration()->isSystemDragSupported() ? event->mimeData()
+                                : dragController()->mimeData(event);
+    bool isAccepted = dropEvent(de, mimeData);
     event->setAccepted(isAccepted);
 }
 

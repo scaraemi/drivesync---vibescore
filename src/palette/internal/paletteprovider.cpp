@@ -668,6 +668,10 @@ bool PaletteProvider::isPaletteDragEnabled() const
 
 QAbstractItemModel* PaletteProvider::mainPaletteModel()
 {
+    // The panel gets the user's palettes already loaded: loading them later resets the model while the panel
+    // is being created (VibeScore loads them on first use)
+    ensureUserPaletteTree();
+
     if (m_isSearching) {
         m_mainPalette = m_searchFilterModel;
     } else {

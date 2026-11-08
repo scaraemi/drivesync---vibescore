@@ -467,6 +467,17 @@ StyledGridView {
 
         CppDrag.active: Drag.active
         CppDrag.mimeData: Drag.mimeData
+
+        // Without system drag (mobile, web) this icon is what is dragged: it stands for the cell, so that the
+        // palettes it is dragged over can tell a move inside a palette from a copy, as with the cell itself
+        property var sourceCell: null
+        readonly property var parentModelIndex: sourceCell ? sourceCell.parentModelIndex : undefined
+        readonly property int rowIndex: sourceCell ? sourceCell.rowIndex : -1
+        readonly property bool dragged: Drag.active
+        property bool paletteDrag: false
+        property bool internalDrag: false
+        property bool dragCopy: false
+        property var dropData: null
     }
 
     MouseArea {
@@ -574,8 +585,16 @@ StyledGridView {
             property bool dragActive: mouseArea.drag.active
             onDragActiveChanged: {
                 if (!ui.isSystemDragSupported) {
-                    draggedIcon.Drag.mimeData = model.mimeData
-                    draggedIcon.Drag.active = dragActive
+                    // Started here; it ends on release (a drop) or on cancel (e.g. the list scrolls): see below
+                    if (dragActive) {
+                        draggedIcon.sourceCell = paletteCell
+                        draggedIcon.dropData = null
+                        draggedIcon.Drag.mimeData = model.mimeData
+                        draggedIcon.Drag.active = true
+                        draggedIcon.visible = true
+                        // As Drag.onDragStarted does with system drag: e.g. "More" stays open during the drag
+                        paletteView.state = "drag"
+                    }
                 } else {
                     Qt.callLater(paletteCell.updateDragActive)
                 }
@@ -590,6 +609,21 @@ StyledGridView {
             }
 
             mouseArea.onReleased: {
+                if (!ui.isSystemDragSupported && draggedIcon.Drag.active) {
+                    // A real drop where the finger is lifted (the score, a palette), not a cancelled drag
+                    draggedIcon.Drag.drop()
+                    paletteCell.applyDropData(draggedIcon.dropData)
+                    draggedIcon.dropData = null
+                }
+                paletteCell.endDrag()
+            }
+
+            mouseArea.onCanceled: {
+                // E.g. the palette list took the touch to scroll: nothing is dropped
+                if (!ui.isSystemDragSupported && draggedIcon.Drag.active) {
+                    draggedIcon.Drag.cancel()
+                    draggedIcon.dropData = null
+                }
                 paletteCell.endDrag()
             }
 
@@ -643,24 +677,25 @@ StyledGridView {
                 DelegateModel.inItems = !internalDrag;
                 DelegateModel.inPersistedItems = false;
 
-                if (dropData) {
-                    var data = dropData;
-                    if (data.action === Qt.MoveAction && data.srcParentModelIndex === data.paletteView.paletteRootIndex) {
-                        data.paletteView.moveCell(data.srcRowIndex, data.destIndex);
-                    } else {
-                        data.paletteView.insertCell(data.destIndex, data.mimeData, data.action);
-                    }
-
-                    dropData = null;
-                }
+                applyDropData(dropData)
+                dropData = null;
 
                 paletteView.selectionModel.clearSelection()
             }
 
+            function applyDropData(data) {
+                if (!data) {
+                    return
+                }
+                if (data.action === Qt.MoveAction && data.srcParentModelIndex === data.paletteView.paletteRootIndex) {
+                    data.paletteView.moveCell(data.srcRowIndex, data.destIndex);
+                } else {
+                    data.paletteView.insertCell(data.destIndex, data.mimeData, data.action);
+                }
+            }
+
             function beginDrag() {
                 draggedIcon.icon = model.decoration
-
-                console.log("isSystemDragSupported: ", ui.isSystemDragSupported)
 
                 if (ui.isSystemDragSupported) {
 
@@ -673,16 +708,23 @@ StyledGridView {
 
                 } else {
 
+                    // Shown only once the drag starts: a press that becomes a scroll leaves nothing behind
                     draggedIcon.parent = ui.rootItem
                     var p = mapToItem(draggedIcon, 0, 0)
                     draggedIcon.x = p.x
                     draggedIcon.y = p.y
-                    draggedIcon.visible = true
                 }
             }
 
             function endDrag() {
+                if (draggedIcon.Drag.active) {
+                    draggedIcon.Drag.cancel()
+                }
+                draggedIcon.sourceCell = null
                 draggedIcon.visible = false
+                if (!ui.isSystemDragSupported) {
+                    paletteView.state = "default"
+                }
                 draggedIcon.parent = grid
                 draggedIcon.x = 0
                 draggedIcon.y = 0
