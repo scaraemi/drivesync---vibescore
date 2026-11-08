@@ -477,6 +477,13 @@ void DriveService::updateCatalog(const drivesync::SyncEngine& engine)
         m_items.insert(folder, item);
     }
 
+    const auto& folderIds = engine.remoteFolderIds();
+    for (auto it = folderIds.cbegin(); it != folderIds.cend(); ++it) {
+        if (!it.key().isEmpty()) {
+            m_fileIds.insert(it.key(), it.value());
+        }
+    }
+
     const auto& remote = engine.remoteFiles();
     for (auto it = remote.cbegin(); it != remote.cend(); ++it) {
         const drivesync::DriveFile& f = it.value();
@@ -1034,4 +1041,217 @@ void DriveService::onPollTimer()
         return;
     }
     checkOpenScore(false);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Folders, renames, moves: on Drive first, then the local copies follow
+
+static bool isValidName(const QString& name)
+{
+    return !name.trimmed().isEmpty() && !name.contains('/') && !name.contains('\\') && !name.startsWith('.');
+}
+
+static QString parentOf(const QString& relPath)
+{
+    const int slash = relPath.lastIndexOf('/');
+    return slash < 0 ? QString() : relPath.left(slash);
+}
+
+QString DriveService::folderIdOf(const QString& relPath) const
+{
+    return relPath.isEmpty() ? folderId() : m_fileIds.value(relPath);
+}
+
+void DriveService::showError(const std::string& title, const QString& text)
+{
+    interactive()->error(title, IInteractive::Text(text.toStdString()));
+}
+
+bool DriveService::checkCanChange(const QString& relPath)
+{
+    if (m_engine) {
+        showError(muse::trc("drive", "Syncing"), muse::qtrc("drive", "Try again in a moment."));
+        return false;
+    }
+
+    const auto item = m_items.constFind(relPath);
+    if (item == m_items.cend()) {
+        return false;
+    }
+
+    // Not while open, here or in another window (a folder: none of its scores)
+    if (item->isFolder) {
+        for (const Item& other : std::as_const(m_items)) {
+            if (!other.isFolder && other.path.startsWith(relPath + '/') && isOpenInApp(other.path)) {
+                showError(muse::trc("drive", "A score of this folder is open"), muse::qtrc("drive", "Close it first."));
+                return false;
+            }
+        }
+    } else if (isOpenInApp(relPath)) {
+        showError(muse::trc("drive", "This score is open"), muse::qtrc("drive", "Close it first."));
+        return false;
+    }
+
+    if (!item->lockedBy.isEmpty() && !item->lockedHere && !item->lockStale) {
+        showError(muse::trc("drive", "This score is being edited"),
+                  muse::qtrc("drive", "%1 has unsaved changes on it.").arg(item->lockedBy));
+        return false;
+    }
+    return true;
+}
+
+void DriveService::createFolder(const QString& parentRelPath, const QString& name)
+{
+    const QString clean = name.trimmed();
+    const QString relPath = parentRelPath.isEmpty() ? clean : parentRelPath + '/' + clean;
+    if (!isValidName(clean)) {
+        showError(muse::trc("drive", "The folder was not created"), muse::qtrc("drive", "This name cannot be used."));
+        return;
+    }
+    if (m_items.contains(relPath)) {
+        showError(muse::trc("drive", "The folder was not created"), muse::qtrc("drive", "There is one with this name already."));
+        return;
+    }
+    const QString parentId = folderIdOf(parentRelPath);
+    if (parentId.isEmpty()) {
+        showError(muse::trc("drive", "The folder was not created"), muse::qtrc("drive", "Sync first, then try again."));
+        return;
+    }
+
+    m_client->createFolder(parentId, clean, [this, relPath](drivesync::Result<drivesync::DriveFile> result) {
+        if (!result.ok()) {
+            showError(muse::trc("drive", "The folder was not created"), result.error.toString());
+            return;
+        }
+        Item folder;
+        folder.path = relPath;
+        folder.isFolder = true;
+        m_items.insert(relPath, folder);
+        m_fileIds.insert(relPath, result.value->id);
+        QDir().mkpath(absPath(relPath));
+        saveCatalog();
+        m_itemsChanged.notify();
+    });
+}
+
+void DriveService::rename(const QString& relPath, const QString& newName)
+{
+    const auto item = m_items.constFind(relPath);
+    if (item == m_items.cend()) {
+        return;
+    }
+
+    QString name = newName.trimmed();
+    if (!item->isFolder && !name.endsWith(QStringLiteral(".mscz"), Qt::CaseInsensitive)) {
+        name += QStringLiteral(".mscz");
+    }
+    const QString parent = parentOf(relPath);
+    const QString newRelPath = parent.isEmpty() ? name : parent + '/' + name;
+    if (newRelPath == relPath) {
+        return;
+    }
+    if (!isValidName(name) || name.compare(QStringLiteral(".mscz"), Qt::CaseInsensitive) == 0) {
+        showError(muse::trc("drive", "Not renamed"), muse::qtrc("drive", "This name cannot be used."));
+        return;
+    }
+    if (m_items.contains(newRelPath)) {
+        showError(muse::trc("drive", "Not renamed"), muse::qtrc("drive", "There is one with this name already."));
+        return;
+    }
+    if (!checkCanChange(relPath)) {
+        return;
+    }
+
+    relocate(relPath, newRelPath, name, QString(), QString());
+}
+
+void DriveService::move(const QString& relPath, const QString& targetFolderRelPath)
+{
+    const auto item = m_items.constFind(relPath);
+    if (item == m_items.cend() || parentOf(relPath) == targetFolderRelPath) {
+        return;
+    }
+    if (item->isFolder && (targetFolderRelPath == relPath || targetFolderRelPath.startsWith(relPath + '/'))) {
+        showError(muse::trc("drive", "Not moved"), muse::qtrc("drive", "A folder cannot go inside itself."));
+        return;
+    }
+
+    const QString name = relPath.mid(relPath.lastIndexOf('/') + 1);
+    const QString newRelPath = targetFolderRelPath.isEmpty() ? name : targetFolderRelPath + '/' + name;
+    if (m_items.contains(newRelPath)) {
+        showError(muse::trc("drive", "Not moved"), muse::qtrc("drive", "That folder has one with this name already."));
+        return;
+    }
+    if (!checkCanChange(relPath)) {
+        return;
+    }
+
+    const QString fromId = folderIdOf(parentOf(relPath));
+    const QString toId = folderIdOf(targetFolderRelPath);
+    if (toId.isEmpty() || fromId.isEmpty()) {
+        showError(muse::trc("drive", "Not moved"), muse::qtrc("drive", "Sync first, then try again."));
+        return;
+    }
+    relocate(relPath, newRelPath, QString(), fromId, toId);
+}
+
+void DriveService::relocate(const QString& relPath, const QString& newRelPath, const QString& newName,
+                            const QString& fromParentId, const QString& toParentId)
+{
+    const QString fileId = fileIdOf(relPath);
+
+    auto followLocally = [this, relPath, newRelPath]() {
+        // Not while another window syncs the folder
+        if (!m_syncLock) {
+            m_syncLock = std::make_unique<HeartbeatFile>(rootPath().toQString() + "/.drivesync/sync.lock");
+        }
+        const bool locked = m_syncLock->acquire();
+        QString error;
+        const bool ok = drivesync::SyncEngine::relocateLocal(rootPath().toQString(), relPath, newRelPath, &error);
+        if (locked) {
+            m_syncLock->release();
+        }
+        if (!ok) {
+            LOGW() << "Drive: local copy not moved: " << error.toStdString();
+        }
+        moveItems(relPath, newRelPath);
+        scheduleSync(0);
+    };
+
+    if (fileId.isEmpty()) {
+        // Only here so far (not uploaded yet): moving the file is enough
+        followLocally();
+        return;
+    }
+
+    m_client->moveRename(fileId, newName, fromParentId, toParentId,
+                         [this, followLocally](drivesync::Result<drivesync::DriveFile> result) {
+        if (!result.ok()) {
+            showError(muse::trc("drive", "Not changed on Drive"), result.error.toString());
+            return;
+        }
+        followLocally();
+    });
+}
+
+void DriveService::moveItems(const QString& fromRelPath, const QString& toRelPath)
+{
+    QHash<QString, Item> items;
+    QHash<QString, QString> ids;
+    for (auto it = m_items.cbegin(); it != m_items.cend(); ++it) {
+        QString path = it.key();
+        if (path == fromRelPath || path.startsWith(fromRelPath + '/')) {
+            path = toRelPath + path.mid(fromRelPath.size());
+        }
+        Item item = it.value();
+        item.path = path;
+        items.insert(path, item);
+        if (m_fileIds.contains(it.key())) {
+            ids.insert(path, m_fileIds.value(it.key()));
+        }
+    }
+    m_items = items;
+    m_fileIds = ids;
+    saveCatalog();
+    m_itemsChanged.notify();
 }

@@ -46,6 +46,9 @@ public:
     void updateContent(const QString& fileId, const QString& localPath, FileCallback callback);
     void createFolder(const QString& parentId, const QString& name, FileCallback callback);
     void trash(const QString& fileId, FileCallback callback);
+    //! Renames (newName not empty) and/or moves (fromParentId -> toParentId, both set) a file or folder
+    void moveRename(const QString& fileId, const QString& newName, const QString& fromParentId, const QString& toParentId,
+                    FileCallback callback);
 
     //! Drive's native lock (contentRestrictions.readOnly). While set, nobody can change the content.
     void setLocked(const QString& fileId, bool locked, const QString& reason, FileCallback callback);

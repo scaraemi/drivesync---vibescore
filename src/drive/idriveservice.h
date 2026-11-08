@@ -107,6 +107,13 @@ public:
     //! Lifts the "being edited" lock of a score (e.g. left by a device that is off)
     virtual void unlock(const QString& relPath) = 0;
 
+    //! On Drive (for everyone), and here. Problems are shown to the user.
+    virtual void createFolder(const QString& parentRelPath, const QString& name) = 0;
+    //! A score keeps its .mscz extension
+    virtual void rename(const QString& relPath, const QString& newName) = 0;
+    //! Into another folder ("" = the Drive folder itself)
+    virtual void move(const QString& relPath, const QString& targetFolderRelPath) = 0;
+
     //! Copies a score of the library into the Drive folder (then syncs). Returns the copy.
     virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) = 0;
 };

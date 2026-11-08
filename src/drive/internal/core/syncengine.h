@@ -100,6 +100,14 @@ public:
     //! changes that are not on Drive yet. Not while a run is going on.
     static bool removeFromDevice(const QString& localRoot, const QString& relPath, QString* error = nullptr);
 
+    //! After a file or folder was moved or renamed on Drive: moves the local copy (if any) and its sync state,
+    //! so that the next run neither downloads it again nor deletes it. Not while a run is going on.
+    static bool relocateLocal(const QString& localRoot, const QString& fromRelPath, const QString& toRelPath,
+                              QString* error = nullptr);
+
+    //! After a run: Drive folder ids by relative path ("" = the root)
+    const QHash<QString, QString>& remoteFolderIds() const { return m_remoteDirs; }
+
 signals:
     void itemStarted(const QString& path, drivesync::SyncAction action);
     void finished(const drivesync::SyncReport& report);

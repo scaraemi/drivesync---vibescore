@@ -88,6 +88,13 @@ public:
     Q_INVOKABLE void deleteFromDrive(const QString& path);
     Q_INVOKABLE void unlock(const QString& path);
 
+    //! In the folder shown
+    Q_INVOKABLE void createFolder(const QString& name);
+    Q_INVOKABLE void rename(const QString& path, const QString& newName);
+    Q_INVOKABLE void move(const QString& path, const QString& targetFolder);
+    //! Where an item can be moved: [{ text, value }], the Drive folder first ("" = it)
+    Q_INVOKABLE QVariantList moveTargets(const QString& path) const;
+
 signals:
     void statusChanged();
     //! A sync run finished: the scores of the folder may have changed

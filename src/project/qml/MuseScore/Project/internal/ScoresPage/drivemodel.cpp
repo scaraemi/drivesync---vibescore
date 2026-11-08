@@ -387,3 +387,54 @@ void DriveModel::unlock(const QString& path)
         driveService()->unlock(path);
     }
 }
+
+void DriveModel::createFolder(const QString& name)
+{
+    if (driveService()) {
+        driveService()->createFolder(m_currentFolder, name);
+    }
+}
+
+void DriveModel::rename(const QString& path, const QString& newName)
+{
+    if (driveService()) {
+        driveService()->rename(path, newName);
+    }
+}
+
+void DriveModel::move(const QString& path, const QString& targetFolder)
+{
+    if (driveService()) {
+        driveService()->move(path, targetFolder);
+    }
+}
+
+QVariantList DriveModel::moveTargets(const QString& path) const
+{
+    if (!driveService()) {
+        return {};
+    }
+
+    const int slash = path.lastIndexOf('/');
+    const QString parent = slash < 0 ? QString() : path.left(slash);
+
+    QStringList folders;
+    for (const IDriveService::Item& item : driveService()->items()) {
+        if (!item.isFolder || item.path == parent || item.path == path || item.path.startsWith(path + '/')) {
+            continue;
+        }
+        folders << item.path;
+    }
+    std::sort(folders.begin(), folders.end(), [](const QString& a, const QString& b) {
+        return QString::localeAwareCompare(a, b) < 0;
+    });
+
+    QVariantList targets;
+    if (!parent.isEmpty()) {
+        targets << QVariantMap { { "text", muse::qtrc("project", "Drive (main folder)") }, { "value", QString() } };
+    }
+    for (const QString& folder : folders) {
+        targets << QVariantMap { { "text", folder }, { "value", folder } };
+    }
+    return targets;
+}

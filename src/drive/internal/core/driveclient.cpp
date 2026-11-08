@@ -392,6 +392,21 @@ void DriveClient::trash(const QString& fileId, FileCallback callback)
                 QJsonObject { { "trashed", true } }, std::move(callback));
 }
 
+void DriveClient::moveRename(const QString& fileId, const QString& newName, const QString& fromParentId,
+                             const QString& toParentId, FileCallback callback)
+{
+    Query query { { "fields", FIELDS } };
+    if (!fromParentId.isEmpty() && !toParentId.isEmpty() && fromParentId != toParentId) {
+        query.append(qMakePair(QStringLiteral("addParents"), toParentId));
+        query.append(qMakePair(QStringLiteral("removeParents"), fromParentId));
+    }
+    QJsonObject body;
+    if (!newName.isEmpty()) {
+        body.insert("name", newName);
+    }
+    jsonRequest("PATCH", apiUrl("/drive/v3/files/" + fileId, query), body, std::move(callback));
+}
+
 void DriveClient::setLocked(const QString& fileId, bool locked, const QString& reason, FileCallback callback)
 {
     QJsonObject restriction { { "readOnly", locked } };

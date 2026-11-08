@@ -86,6 +86,9 @@ public:
     muse::Ret removeFromDevice(const QString& relPath) override;
     void deleteFromDrive(const QString& relPath) override;
     void unlock(const QString& relPath) override;
+    void createFolder(const QString& parentRelPath, const QString& name) override;
+    void rename(const QString& relPath, const QString& newName) override;
+    void move(const QString& relPath, const QString& targetFolderRelPath) override;
 
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) override;
 
@@ -130,6 +133,14 @@ private:
     void loadCatalog();
     void saveCatalog() const;
     QString fileIdOf(const QString& relPath) const;
+    QString folderIdOf(const QString& relPath) const;
+
+    // Rename / move
+    bool checkCanChange(const QString& relPath);
+    void relocate(const QString& relPath, const QString& newRelPath, const QString& newName, const QString& fromParentId,
+                  const QString& toParentId);
+    void moveItems(const QString& fromRelPath, const QString& toRelPath);
+    void showError(const std::string& title, const QString& text);
 
     QNetworkAccessManager* m_nam = nullptr;
     std::unique_ptr<drivesync::SettingsTokenStore> m_tokenStore;

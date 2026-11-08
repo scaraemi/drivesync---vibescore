@@ -182,6 +182,53 @@ bool SyncEngine::removeFromDevice(const QString& localRoot, const QString& relPa
     return manifest.save(manifestFile);
 }
 
+bool SyncEngine::relocateLocal(const QString& localRoot, const QString& fromRelPath, const QString& toRelPath, QString* error)
+{
+    const QString root = QDir::cleanPath(localRoot);
+    const QString manifestFile = root + "/.drivesync/manifest.json";
+    SyncManifest manifest;
+    manifest.load(manifestFile);
+
+    const QString from = root + '/' + fromRelPath;
+    const QString to = root + '/' + toRelPath;
+    if (QFileInfo::exists(from)) {
+        if (QFileInfo::exists(to)) {
+            if (error) {
+                *error = QStringLiteral("'%1' exists already").arg(toRelPath);
+            }
+            return false;
+        }
+        QDir().mkpath(QFileInfo(to).absolutePath());
+        if (!QDir().rename(from, to)) {
+            if (error) {
+                *error = QStringLiteral("cannot move '%1'").arg(fromRelPath);
+            }
+            return false;
+        }
+    }
+
+    // The file itself, or everything under the folder
+    QHash<QString, ManifestEntry> moved;
+    for (auto it = manifest.entries.begin(); it != manifest.entries.end();) {
+        if (it.key() == fromRelPath || it.key().startsWith(fromRelPath + '/')) {
+            ManifestEntry entry = it.value();
+            const QString newPath = toRelPath + it.key().mid(fromRelPath.size());
+            const QFileInfo info(root + '/' + newPath);
+            if (info.exists()) {
+                entry.localMtimeMs = info.lastModified().toMSecsSinceEpoch(); // a rename may touch it
+            }
+            moved.insert(newPath, entry);
+            it = manifest.entries.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = moved.cbegin(); it != moved.cend(); ++it) {
+        manifest.entries.insert(it.key(), it.value());
+    }
+    return manifest.save(manifestFile);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Run
 

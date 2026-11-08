@@ -111,6 +111,18 @@ Item {
                 onClicked: root.driveModel.syncNow()
             }
 
+            FlatButton {
+                visible: root.isReady
+                icon: IconCode.OPEN_FILE
+                text: qsTrc("project", "New folder")
+                orientation: Qt.Horizontal
+
+                navigation.panel: navPanel
+                navigation.column: 8
+
+                onClicked: editRow.start("newFolder", "", "")
+            }
+
             MenuButton {
                 visible: root.state_ !== "notSignedIn" && root.state_ !== "signingIn"
 
@@ -187,6 +199,99 @@ Item {
             visible: folderRow.visible && text !== ""
             horizontalAlignment: Text.AlignLeft
             wrapMode: Text.WordWrap
+        }
+
+        // New folder, rename, move: one at a time, here above the list
+        RowLayout {
+            id: editRow
+
+            property string mode: ""   // "newFolder", "rename", "move"
+            property string path: ""
+            property string text: ""
+            property var targets: []
+
+            function start(newMode, itemPath, currentName) {
+                mode = newMode
+                path = itemPath
+                text = currentName
+                nameField.currentText = currentName
+                targets = newMode === "move" ? root.driveModel.moveTargets(itemPath) : []
+                targetDropdown.currentIndex = targets.length > 0 ? 0 : -1
+                if (newMode !== "move") {
+                    nameField.forceActiveFocus()
+                }
+            }
+
+            function apply() {
+                if (mode === "newFolder") {
+                    root.driveModel.createFolder(text)
+                } else if (mode === "rename") {
+                    root.driveModel.rename(path, text)
+                } else if (mode === "move" && targetDropdown.currentIndex >= 0) {
+                    root.driveModel.move(path, targetDropdown.currentValue)
+                }
+                mode = ""
+            }
+
+            Layout.fillWidth: true
+            visible: root.isReady && mode !== ""
+            spacing: 12
+
+            StyledTextLabel {
+                text: editRow.mode === "newFolder" ? qsTrc("project", "New folder:")
+                      : editRow.mode === "rename" ? qsTrc("project", "New name:")
+                      : qsTrc("project", "Move to:")
+            }
+
+            TextInputField {
+                id: nameField
+
+                Layout.fillWidth: true
+                visible: editRow.mode === "newFolder" || editRow.mode === "rename"
+
+                navigation.panel: navPanel
+                navigation.column: 9
+
+                onTextChanged: function(newTextValue) {
+                    editRow.text = newTextValue
+                }
+                onAccepted: editRow.apply()
+            }
+
+            StyledDropdown {
+                id: targetDropdown
+
+                Layout.fillWidth: true
+                visible: editRow.mode === "move"
+                model: editRow.targets
+
+                navigation.panel: navPanel
+                navigation.column: 9
+
+                onActivated: function(index, value) {
+                    currentIndex = index
+                }
+            }
+
+            FlatButton {
+                text: qsTrc("global", "OK")
+                accentButton: true
+                enabled: editRow.mode === "move" ? targetDropdown.currentIndex >= 0 : editRow.text.trim() !== ""
+
+                navigation.panel: navPanel
+                navigation.column: 10
+
+                onClicked: editRow.apply()
+            }
+
+            FlatButton {
+                text: qsTrc("global", "Cancel")
+
+                navigation.panel: navPanel
+                navigation.column: 11
+
+                onClicked: editRow.mode = ""
+            }
         }
 
         Repeater {
@@ -329,7 +434,6 @@ Item {
                 }
 
                 MenuButton {
-                    visible: !itemDelegate.modelData.isFolder
 
                     navigation.panel: listPanel
                     navigation.row: itemDelegate.index
@@ -337,7 +441,10 @@ Item {
 
                     menuModel: {
                         const d = itemDelegate.modelData
-                        let actions = []
+                        let actions = [
+                            { id: "rename", title: qsTrc("project", "Rename…") },
+                            { id: "move", title: qsTrc("project", "Move to…") }
+                        ]
                         if (d.onDevice && !d.notUploaded) {
                             actions.push({ id: "removeFromDevice", title: qsTrc("project", "Remove from this device") })
                         }
@@ -350,7 +457,11 @@ Item {
 
                     onHandleMenuItem: function(itemId) {
                         const path = itemDelegate.modelData.path
-                        if (itemId === "removeFromDevice") {
+                        if (itemId === "rename") {
+                            editRow.start("rename", path, itemDelegate.modelData.name)
+                        } else if (itemId === "move") {
+                            editRow.start("move", path, "")
+                        } else if (itemId === "removeFromDevice") {
                             Qt.callLater(root.driveModel.removeFromDevice, path)
                         } else if (itemId === "unlock") {
                             Qt.callLater(root.driveModel.unlock, path)
