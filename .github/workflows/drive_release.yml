@@ -10,10 +10,10 @@ name: 'Drive: release'
 
 on:
   workflow_dispatch:
-  # Also started by pushing a tag build-drive-<anything> (from outside GitHub, where "Run workflow" is not at hand)
+  # Also started by pushing to the branch drive-release (from outside GitHub, where "Run workflow" is not at hand)
   push:
-    tags:
-      - 'build-drive-*'
+    branches:
+      - drive-release
 
 permissions:
   contents: write
