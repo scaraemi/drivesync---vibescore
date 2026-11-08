@@ -43,6 +43,10 @@ struct DriveFile
     bool trashed = false;
     bool locked = false;      // contentRestrictions.readOnly
     QString lockReason;
+    QString lockedBy;         // restrictingUser.displayName
+    bool lockedByMe = false;  // the signed-in Google account (on any device)
+    QDateTime lockTime;
+    bool lastModifiedByMe = false;
 
     bool isFolder() const;
     bool isGoogleNative() const; // Docs, Sheets, ...: no binary content to sync

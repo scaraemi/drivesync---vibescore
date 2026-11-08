@@ -36,6 +36,7 @@ DriveFile DriveFile::fromJson(const QJsonObject& obj)
     f.trashed = obj.value("trashed").toBool();
     f.modifiedTime = QDateTime::fromString(obj.value("modifiedTime").toString(), Qt::ISODateWithMs);
     f.lastModifyingUser = obj.value("lastModifyingUser").toObject().value("displayName").toString();
+    f.lastModifiedByMe = obj.value("lastModifyingUser").toObject().value("me").toBool();
 
     for (const QJsonValue& p : obj.value("parents").toArray()) {
         f.parents << p.toString();
@@ -46,6 +47,9 @@ DriveFile DriveFile::fromJson(const QJsonObject& obj)
         if (restriction.value("readOnly").toBool()) {
             f.locked = true;
             f.lockReason = restriction.value("reason").toString();
+            f.lockedBy = restriction.value("restrictingUser").toObject().value("displayName").toString();
+            f.lockedByMe = restriction.value("restrictingUser").toObject().value("me").toBool();
+            f.lockTime = QDateTime::fromString(restriction.value("restrictionTime").toString(), Qt::ISODateWithMs);
         }
     }
 

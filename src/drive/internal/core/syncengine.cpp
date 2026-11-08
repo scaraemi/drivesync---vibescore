@@ -2,6 +2,7 @@
 #include "syncengine.h"
 
 #include <QCryptographicHash>
+#include <algorithm>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -128,6 +129,57 @@ bool SyncEngine::isSyncedFile(const QString& relPath) const
         }
     }
     return false;
+}
+
+QStringList SyncEngine::remoteFolders() const
+{
+    QStringList folders;
+    for (auto it = m_remoteDirs.keyBegin(); it != m_remoteDirs.keyEnd(); ++it) {
+        if (!it->isEmpty()) {
+            folders << *it;
+        }
+    }
+    folders.sort();
+    return folders;
+}
+
+bool SyncEngine::removeFromDevice(const QString& localRoot, const QString& relPath, QString* error)
+{
+    const QString root = QDir::cleanPath(localRoot);
+    const QString manifestFile = root + "/.drivesync/manifest.json";
+    SyncManifest manifest;
+    manifest.load(manifestFile);
+
+    const QString path = root + '/' + relPath;
+    const QFileInfo info(path);
+    const auto entry = manifest.entries.constFind(relPath);
+    if (!info.exists()) {
+        manifest.entries.remove(relPath);
+        return manifest.save(manifestFile);
+    }
+
+    // Only a copy of what is on Drive can go: same size and time as at the last sync, or same content
+    bool same = entry != manifest.entries.cend() && entry->localSize == info.size()
+                && entry->localMtimeMs == info.lastModified().toMSecsSinceEpoch();
+    if (!same && entry != manifest.entries.cend()) {
+        bool ok = false;
+        same = md5Of(path, &ok) == entry->baseMd5 && ok;
+    }
+    if (!same) {
+        if (error) {
+            *error = QStringLiteral("it has changes that are not on Drive yet");
+        }
+        return false;
+    }
+
+    if (!QFile::remove(path)) {
+        if (error) {
+            *error = QStringLiteral("cannot delete the file");
+        }
+        return false;
+    }
+    manifest.entries.remove(relPath);
+    return manifest.save(manifestFile);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -272,6 +324,14 @@ void SyncEngine::planAndProcess()
     }
 
     m_queue = SyncPlanner::plan(local, remote, base);
+
+    if (m_config.onDemand) {
+        // New on Drive and never on this device: listed, not downloaded, unless asked for
+        m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(), [&](const PlannedItem& item) {
+            return item.action == SyncAction::Download && !base.contains(item.path) && !local.contains(item.path)
+                   && !(m_config.wanted && m_config.wanted(item.path));
+        }), m_queue.end());
+    }
 
     int deletions = 0;
     for (const PlannedItem& item : std::as_const(m_queue)) {
@@ -466,6 +526,25 @@ void SyncEngine::uploadUpdate(const QString& path)
         if (remote.headRevisionId != base.baseRevision) {
             m_remote.insert(path, remote);
             resolveConflict(path);
+            return;
+        }
+        if (remote.locked && m_config.canLiftLock && m_config.canLiftLock(remote)) {
+            m_client->setLocked(remote.id, false, QString(), [=](Result<DriveFile> unlocked) {
+                if (!unlocked.ok()) {
+                    done(path, "cannot unlock: " + unlocked.error.toString());
+                    return;
+                }
+                m_client->updateContent(base.fileId, abs(path), [=](Result<DriveFile> result) {
+                    if (!result.ok()) {
+                        done(path, "upload failed: " + result.error.toString());
+                        return;
+                    }
+                    m_remote.insert(path, *result.value);
+                    record(path, *result.value);
+                    ++m_report.uploaded;
+                    done(path);
+                });
+            });
             return;
         }
         if (remote.locked) {

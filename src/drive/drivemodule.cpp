@@ -47,5 +47,8 @@ void DriveModule::onInit(const IApplication::RunMode& mode)
 
 void DriveModule::onDeinit()
 {
+    if (m_service) {
+        m_service->deinit();
+    }
     m_service.reset();
 }

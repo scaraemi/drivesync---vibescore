@@ -53,16 +53,6 @@ Item {
         accessible.name: qsTrc("project", "Google Drive")
     }
 
-    Connections {
-        target: root.driveModel
-
-        function onSyncFinished() {
-            if (scoresLoader.item) {
-                scoresLoader.item.reload()
-            }
-        }
-    }
-
     ColumnLayout {
         id: header
 
@@ -215,36 +205,169 @@ Item {
         }
     }
 
-    Loader {
-        id: scoresLoader
+    Binding {
+        target: root.driveModel
+        property: "searchText"
+        value: root.searchText
+        when: root.driveModel !== null
+    }
+
+    RowLayout {
+        id: folderBar
 
         anchors.top: header.bottom
-        anchors.topMargin: 16
+        anchors.topMargin: 12
         anchors.left: parent.left
+        anchors.leftMargin: root.sideMargin
         anchors.right: parent.right
+        anchors.rightMargin: root.sideMargin
+
+        visible: root.isReady && root.driveModel.currentFolder !== "" && root.searchText === ""
+        height: visible ? implicitHeight : 0
+        spacing: 8
+
+        FlatButton {
+            icon: IconCode.ARROW_LEFT
+            transparent: true
+            toolTipTitle: qsTrc("global", "Back")
+
+            navigation.panel: navPanel
+            navigation.column: 7
+
+            onClicked: root.driveModel.goUp()
+        }
+
+        StyledTextLabel {
+            Layout.fillWidth: true
+            text: root.driveModel ? root.driveModel.currentFolderName : ""
+            font: ui.theme.largeBodyBoldFont
+            horizontalAlignment: Text.AlignLeft
+        }
+    }
+
+    NavigationPanel {
+        id: listPanel
+        name: "DriveScores"
+        section: root.navigationSection
+        order: root.navigationOrder + 1
+        direction: NavigationPanel.Vertical
+        accessible.name: qsTrc("project", "Scores on Drive")
+    }
+
+    StyledListView {
+        id: list
+
+        anchors.top: folderBar.visible ? folderBar.bottom : header.bottom
+        anchors.topMargin: 12
+        anchors.left: parent.left
+        anchors.leftMargin: root.sideMargin
+        anchors.right: parent.right
+        anchors.rightMargin: root.sideMargin
         anchors.bottom: parent.bottom
 
-        active: root.isReady
+        visible: root.isReady
+        model: root.isReady ? root.driveModel.items : []
+        spacing: 2
 
-        sourceComponent: LibraryScoresView {
-            folder: root.driveModel.rootPath
-            showCreateNew: false
+        delegate: ListItemBlank {
+            id: itemDelegate
 
-            viewType: root.viewType
-            searchText: root.searchText
-            backgroundColor: root.backgroundColor
-            sideMargin: root.sideMargin
+            required property var modelData
+            required property int index
 
-            navigationSection: root.navigationSection
-            navigationOrder: root.navigationOrder + 1
+            width: ListView.view.width
+            height: 64
+            radius: 4
 
-            onOpenScoreRequested: function(scorePath, displayName) {
-                root.openScoreRequested(scorePath, displayName)
+            navigation.panel: listPanel
+            navigation.row: index
+            navigation.accessible.name: modelData.name
+
+            onClicked: root.driveModel.openItem(modelData.path)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 4
+                spacing: 12
+
+                StyledIconLabel {
+                    Layout.preferredWidth: 28
+                    iconCode: itemDelegate.modelData.isFolder ? IconCode.OPEN_FILE
+                              : itemDelegate.modelData.locked ? IconCode.LOCK_CLOSED
+                              : itemDelegate.modelData.onDevice ? IconCode.SCORE : IconCode.CLOUD
+                    font.pixelSize: 20
+                    opacity: itemDelegate.modelData.isFolder || itemDelegate.modelData.onDevice ? 1.0 : 0.7
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    StyledTextLabel {
+                        Layout.fillWidth: true
+                        text: itemDelegate.modelData.name
+                        font: ui.theme.bodyBoldFont
+                        horizontalAlignment: Text.AlignLeft
+                    }
+
+                    StyledTextLabel {
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: itemDelegate.modelData.subtitle
+                        horizontalAlignment: Text.AlignLeft
+                        opacity: 0.7
+                    }
+
+                    StyledTextLabel {
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: itemDelegate.modelData.lockText
+                        horizontalAlignment: Text.AlignLeft
+                        color: ui.theme.accentColor
+                    }
+                }
+
+                MenuButton {
+                    visible: !itemDelegate.modelData.isFolder
+
+                    navigation.panel: listPanel
+                    navigation.row: itemDelegate.index
+                    navigation.column: 1
+
+                    menuModel: {
+                        const d = itemDelegate.modelData
+                        let actions = []
+                        if (d.onDevice && !d.notUploaded) {
+                            actions.push({ id: "removeFromDevice", title: qsTrc("project", "Remove from this device") })
+                        }
+                        if (d.locked && (d.lockedHere || d.lockStale)) {
+                            actions.push({ id: "unlock", title: qsTrc("project", "Unlock") })
+                        }
+                        actions.push({ id: "delete", title: qsTrc("project", "Delete from Drive…") })
+                        return actions
+                    }
+
+                    onHandleMenuItem: function(itemId) {
+                        const path = itemDelegate.modelData.path
+                        if (itemId === "removeFromDevice") {
+                            Qt.callLater(root.driveModel.removeFromDevice, path)
+                        } else if (itemId === "unlock") {
+                            Qt.callLater(root.driveModel.unlock, path)
+                        } else if (itemId === "delete") {
+                            Qt.callLater(root.driveModel.deleteFromDrive, path)
+                        }
+                    }
+                }
             }
+        }
 
-            onRevealInFileBrowserRequested: function(scorePath) {
-                root.revealInFileBrowserRequested(scorePath)
-            }
+        StyledTextLabel {
+            anchors.centerIn: parent
+            visible: list.count === 0 && root.isReady
+            text: root.searchText !== "" ? qsTrc("project", "No scores found")
+                                         : qsTrc("project", "No scores in this folder")
+            opacity: 0.7
         }
     }
 }

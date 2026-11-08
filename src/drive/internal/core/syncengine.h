@@ -44,6 +44,16 @@ struct SyncConfig
     //! Files open in the app (relative path): they are never replaced, renamed or deleted here, only uploaded
     //! once saved. Remote changes to them wait for the next run after they are closed.
     std::function<bool(const QString& relPath)> isOpenInApp;
+
+    //! Files on demand: a Drive file that was never on this device is not downloaded, only listed (see
+    //! SyncEngine::remoteFiles()), unless wanted() asks for it. Files on the device are synced as usual;
+    //! SyncEngine::removeFromDevice() takes one off the device without deleting it on Drive.
+    bool onDemand = false;
+    std::function<bool(const QString& relPath)> wanted;
+
+    //! A lock (contentRestrictions.readOnly) that this app may lift to upload, e.g. its own lock on a score
+    //! with unsaved changes. Other locks are respected: the upload waits.
+    std::function<bool(const DriveFile& file)> canLiftLock;
 };
 
 struct SyncReport
@@ -81,6 +91,14 @@ public:
     void setClock(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
 
     static QString conflictCopyName(const QString& path, const QString& label, const QString& device, const QDateTime& when);
+
+    //! After a run: the Drive files and folders (relative paths), with their state on Drive
+    const QHash<QString, DriveFile>& remoteFiles() const { return m_remote; }
+    QStringList remoteFolders() const;
+
+    //! Takes a file off the device without deleting it on Drive (on-demand mode). Refused if the file has
+    //! changes that are not on Drive yet. Not while a run is going on.
+    static bool removeFromDevice(const QString& localRoot, const QString& relPath, QString* error = nullptr);
 
 signals:
     void itemStarted(const QString& path, drivesync::SyncAction action);

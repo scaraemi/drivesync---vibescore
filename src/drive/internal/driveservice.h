@@ -20,11 +20,14 @@
 
 #include <memory>
 
+#include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QTimer>
 
 #include "async/asyncable.h"
 #include "modularity/ioc.h"
+#include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "global/iinteractive.h"
 #include "global/io/ifilesystem.h"
@@ -41,6 +44,7 @@ class DriveClient;
 class SyncEngine;
 class SettingsTokenStore;
 struct SyncReport;
+struct DriveFile;
 }
 
 namespace mu::drive {
@@ -52,12 +56,14 @@ class DriveService : public QObject, public IDriveService, public muse::Contexta
     muse::GlobalInject<project::IProjectConfiguration> projectConfiguration;
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
 
 public:
     explicit DriveService(const muse::modularity::ContextPtr& iocCtx);
     ~DriveService() override;
 
     void init();
+    void deinit();
 
     bool isAvailable() const override;
     Status status() const override;
@@ -74,18 +80,56 @@ public:
 
     void sync() override;
 
+    QList<Item> items() const override;
+    muse::async::Notification itemsChanged() const override;
+    void openScore(const QString& relPath) override;
+    muse::Ret removeFromDevice(const QString& relPath) override;
+    void deleteFromDrive(const QString& relPath) override;
+    void unlock(const QString& relPath) override;
+
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) override;
 
     static QString folderIdFromLink(const QString& linkOrId);
 
 private:
+    struct OpenScore {
+        QString relPath;           // empty: the open score is not in the Drive folder
+        QString fileId;            // empty: not on Drive yet
+        QString knownRevision;     // the revision the app has (or was told about)
+        bool lockHeld = false;     // this device locked it (unsaved changes)
+        bool warnedLocked = false; // told the user that someone else is editing it
+    };
+
     void updateState();
     void scheduleSync(int delayMs);
     void onFinished(const drivesync::SyncReport& report);
-    void watchCurrentProject();
-    void markOpenProject();
     bool isOpenInApp(const QString& relPath) const;
+    QString relPathOf(const muse::io::path_t& path) const;
+    QString absPath(const QString& relPath) const;
+
+    // The open score
+    void onCurrentProjectChanged();
+    void markOpenProject();
     QString openMarkerPath(const QString& relPath) const;
+    void checkOpenScore(bool opening);
+    void onOpenScoreModified();
+    void takeLock();
+    void releaseLock(const QString& fileId);
+    void reloadOpenScore();
+    void onPollTimer();
+
+    // Locks: the reason carries the device and the expiry, e.g. "Unsaved changes on Tablet [vs:<id>:<until>]"
+    QString lockReasonText() const;
+    bool isOwnLock(const drivesync::DriveFile& file) const;
+    bool isStaleLock(const drivesync::DriveFile& file) const;
+    QString deviceId() const;
+
+    // The catalog of the Drive folder
+    void updateCatalog(const drivesync::SyncEngine& engine);
+    void refreshLocalState();
+    void loadCatalog();
+    void saveCatalog() const;
+    QString fileIdOf(const QString& relPath) const;
 
     QNetworkAccessManager* m_nam = nullptr;
     std::unique_ptr<drivesync::SettingsTokenStore> m_tokenStore;
@@ -97,9 +141,22 @@ private:
     std::unique_ptr<HeartbeatFile> m_openMarker;
 
     QTimer m_syncTimer;
+    QTimer m_pollTimer;
+    QTimer m_lockRenewTimer;
+    int m_pollTicks = 0;
     bool m_syncAgain = false;
     QDateTime m_lastStart;
     Status m_status;
     muse::async::Notification m_statusChanged;
+
+    QHash<QString, Item> m_items;          // path -> item
+    QHash<QString, QString> m_fileIds;     // path -> Drive file id
+    muse::async::Notification m_itemsChanged;
+
+    QSet<QString> m_wanted;                // to download on the next run (on demand)
+    QString m_openAfterSync;               // relative path
+    QString m_reopenAfterClose;            // relative path
+
+    OpenScore m_open;
 };
 }

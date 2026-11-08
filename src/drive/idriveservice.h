@@ -19,6 +19,7 @@
 #pragma once
 
 #include <QDateTime>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
@@ -48,6 +49,22 @@ public:
         Syncing,
     };
 
+    //! A file or folder of the Drive folder (on demand: most files are only listed until they are opened)
+    struct Item {
+        QString path;              // relative to the Drive folder, '/'-separated
+        bool isFolder = false;
+        qint64 size = 0;
+        QDateTime modified;
+        QString modifiedBy;
+        bool onDevice = false;     // downloaded (or not uploaded yet)
+        bool notUploaded = false;  // only on this device so far
+        QString lockedBy;          // empty: not locked
+        QString lockReason;        // e.g. "Unsaved changes on Tablet"
+        QDateTime lockedSince;
+        bool lockedHere = false;   // by this device
+        bool lockStale = false;    // its owner did not renew it: may be lifted
+    };
+
     struct Status {
         State state = State::NotSignedIn;
         QDateTime lastSync;        // last run that finished (with or without problems)
@@ -55,6 +72,7 @@ public:
         int lastTransfers = 0;
         QStringList conflicts;     // names of the conflict copies made by the last run
         QStringList problems;      // errors and skipped files of the last run, for the user
+        QString fetching;          // a score being downloaded to be opened
     };
 
     //! False when the app was built without a Google OAuth client
@@ -75,6 +93,19 @@ public:
     virtual muse::Ret setFolder(const QString& linkOrId) = 0;
 
     virtual void sync() = 0;
+
+    //! The whole Drive folder, as of the last sync (kept between runs of the app)
+    virtual QList<Item> items() const = 0;
+    virtual muse::async::Notification itemsChanged() const = 0;
+
+    //! Opens a score of the folder, downloading it first if it is not on the device
+    virtual void openScore(const QString& relPath) = 0;
+    //! Frees the space: the score stays on Drive. Refused if it has changes not on Drive yet, or is open.
+    virtual muse::Ret removeFromDevice(const QString& relPath) = 0;
+    //! Moves the score to Drive's trash (for everyone), and off this device
+    virtual void deleteFromDrive(const QString& relPath) = 0;
+    //! Lifts the "being edited" lock of a score (e.g. left by a device that is off)
+    virtual void unlock(const QString& relPath) = 0;
 
     //! Copies a score of the library into the Drive folder (then syncs). Returns the copy.
     virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) = 0;

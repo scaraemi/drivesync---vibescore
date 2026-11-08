@@ -20,7 +20,7 @@ using namespace drivesync;
 
 static const QString FIELDS = QStringLiteral(
     "id,name,mimeType,md5Checksum,headRevisionId,modifiedTime,size,trashed,parents,"
-    "contentRestrictions,lastModifyingUser(displayName)");
+    "contentRestrictions,lastModifyingUser(displayName,me)");
 
 static int httpStatus(QNetworkReply* reply)
 {
