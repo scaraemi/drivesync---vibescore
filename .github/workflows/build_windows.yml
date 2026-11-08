@@ -218,6 +218,8 @@ jobs:
         :: Drive releases: an installer also for a development build (package.bat makes a .7z for those)
         SET PACK_MODE=
         IF "${{ inputs.msi }}" == "true" SET PACK_MODE=-m testing
+        :: Without MuseScore's signing service: an unsigned installer ('' would be taken as a key)
+        IF NOT "%PACK_MODE%" == "" IF ${{ secrets.WIN_SIGN_S3_KEY == '' }} == true ( SET S_S="" & SET S_K="" )
         CALL buildscripts\ci\windows\package.bat %PACK_MODE% --signsecret %S_S% --signkey %S_K% --guid %GUID%
         :: No WiX on the runner: fall back to the .7z archive
         IF ERRORLEVEL 1 IF NOT "%PACK_MODE%" == "" CALL buildscripts\ci\windows\package.bat --signsecret %S_S% --signkey %S_K% --guid %GUID%
