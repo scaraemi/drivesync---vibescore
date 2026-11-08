@@ -1,4 +1,5 @@
-# Keeps this fork up to date with VibeScore (m1omg/vibescore) and, when something changed, starts a
+# Keeps this fork up to date with VibeScore (m1omg/vibescore) and with the official MuseScore patch releases of
+# the same version, and, when something changed, starts a
 # Drive release (Android APK + Windows installer). The Drive changes stay on top as a merge.
 # A merge conflict stops here: it is reported in the run, and the branch is left as it was.
 name: 'Drive: sync with VibeScore'
@@ -35,17 +36,45 @@ jobs:
           git remote add upstream https://github.com/m1omg/vibescore.git
           git fetch --no-tags upstream vibescore
 
+          CHANGED=false
           NEW=$(git rev-list --count HEAD..upstream/vibescore)
-          echo "Upstream commits not here yet: $NEW"
-          if [ "$NEW" = "0" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          echo "VibeScore commits not here yet: $NEW"
+          if [ "$NEW" != "0" ]; then
+            if ! git merge --no-edit upstream/vibescore; then
+              git merge --abort
+              echo "::error::Merge conflict with VibeScore: merge upstream/vibescore by hand (the Drive files are src/drive, the Scores page and the build workflows)."
+              exit 1
+            fi
+            CHANGED=true
           fi
 
-          if ! git merge --no-edit upstream/vibescore; then
-            git merge --abort
-            echo "::error::Merge conflict with VibeScore: merge upstream/vibescore by hand (the Drive files are src/drive, the Scores page and the build workflows)."
-            exit 1
+          # The official MuseScore fixes of the same version (4.7.x patch releases), if VibeScore has not got them yet.
+          # A conflict there is reported and skipped: VibeScore usually brings them in itself.
+          SERIES=$(grep -oP 'MUSE_APP_VERSION_(MAJOR|MINOR) "\K[0-9]+' version.cmake | paste -sd.)
+          TAG=$(git ls-remote --tags --refs https://github.com/musescore/MuseScore.git "v${SERIES}.*" \
+                | awk '{ print $2 }' | sed 's|refs/tags/||' | sort -V | tail -1)
+          echo "Newest official MuseScore ${SERIES}: ${TAG:-none}"
+          if [ -n "$TAG" ]; then
+            git fetch --no-tags https://github.com/musescore/MuseScore.git "refs/tags/$TAG:refs/upstream-musescore/$TAG"
+            if git merge-base --is-ancestor "refs/upstream-musescore/$TAG" HEAD; then
+              echo "MuseScore $TAG is already in"
+            elif git merge --no-edit -m "Merge MuseScore $TAG" "refs/upstream-musescore/$TAG"; then
+              # MuseScore's own CI is not used here, and the workflow token may not change workflows: keep ours
+              if ! git diff --quiet HEAD^1 HEAD -- .github; then
+                git restore --source=HEAD^1 --staged --worktree -- .github
+                git commit --amend --no-edit
+              fi
+              echo "Merged MuseScore $TAG"
+              CHANGED=true
+            else
+              git merge --abort
+              echo "::warning::MuseScore $TAG does not merge cleanly with VibeScore: skipped (it needs a merge by hand)."
+            fi
+          fi
+
+          if [ "$CHANGED" = "false" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if ! git push origin HEAD:vibescore; then
             # The workflow token cannot change files under .github/workflows

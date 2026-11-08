@@ -169,6 +169,8 @@ void DriveService::init()
         onCurrentProjectChanged();
     });
 
+    initExtras();
+
     loadCatalog();
     onCurrentProjectChanged();
     updateState();

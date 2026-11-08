@@ -28,6 +28,9 @@ target_sources(drive PRIVATE
 
     internal/driveservice.cpp
     internal/driveservice.h
+    internal/driveservice_extras.cpp
+    internal/crashhandler.cpp
+    internal/crashhandler.h
     internal/heartbeatfile.cpp
     internal/heartbeatfile.h
 
@@ -46,7 +49,18 @@ target_sources(drive PRIVATE
     internal/core/syncplanner.h
 )
 
+# Which build this is, and where its updates are published: from CI (GitHub Actions) when there
+string(SUBSTRING "$ENV{GITHUB_SHA}" 0 7 VS_BUILD_ID)
+if (VS_BUILD_ID STREQUAL "")
+    set(VS_BUILD_ID "local")
+endif()
+string(TIMESTAMP VS_BUILD_TIME "%s" UTC)
+set(VS_UPDATE_REPO "$ENV{GITHUB_REPOSITORY}" CACHE STRING "GitHub repository whose releases are this app's updates")
+
 target_compile_definitions(drive PRIVATE
+    VS_BUILD_ID="${VS_BUILD_ID}"
+    VS_BUILD_TIME=${VS_BUILD_TIME}
+    VS_UPDATE_REPO="${VS_UPDATE_REPO}"
     VS_DRIVE_CLIENT_ID="${VS_DRIVE_CLIENT_ID}"
     VS_DRIVE_CLIENT_SECRET="${VS_DRIVE_CLIENT_SECRET}"
     VS_DRIVE_FOLDER_ID="${VS_DRIVE_FOLDER_ID}"

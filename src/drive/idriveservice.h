@@ -114,6 +114,11 @@ public:
     //! Into another folder ("" = the Drive folder itself)
     virtual void move(const QString& relPath, const QString& targetFolderRelPath) = 0;
 
+    //! The app's logs and crash reports: shared (Android) or shown in the file browser (desktop)
+    virtual void shareDiagnostics() = 0;
+    //! Looks for a newer release of this build on GitHub; userAsked: also says when there is none
+    virtual void checkForUpdates(bool userAsked) = 0;
+
     //! Copies a score of the library into the Drive folder (then syncs). Returns the copy.
     virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) = 0;
 };

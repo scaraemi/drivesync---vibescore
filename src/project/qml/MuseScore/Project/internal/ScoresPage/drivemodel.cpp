@@ -438,3 +438,17 @@ QVariantList DriveModel::moveTargets(const QString& path) const
     }
     return targets;
 }
+
+void DriveModel::shareDiagnostics()
+{
+    if (driveService()) {
+        driveService()->shareDiagnostics();
+    }
+}
+
+void DriveModel::checkForUpdates()
+{
+    if (driveService()) {
+        driveService()->checkForUpdates(true);
+    }
+}

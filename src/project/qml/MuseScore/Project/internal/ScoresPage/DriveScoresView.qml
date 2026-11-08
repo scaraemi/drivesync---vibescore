@@ -124,15 +124,19 @@ Item {
             }
 
             MenuButton {
-                visible: root.state_ !== "notSignedIn" && root.state_ !== "signingIn"
-
                 navigation.panel: navPanel
                 navigation.column: 4
 
-                menuModel: [
-                    { id: "folder", title: qsTrc("project", "Change Drive folder…") },
-                    { id: "signOut", title: qsTrc("project", "Sign out of Google") }
-                ]
+                menuModel: {
+                    let items = []
+                    if (root.state_ !== "notSignedIn" && root.state_ !== "signingIn") {
+                        items.push({ id: "folder", title: qsTrc("project", "Change Drive folder…") })
+                        items.push({ id: "signOut", title: qsTrc("project", "Sign out of Google") })
+                    }
+                    items.push({ id: "updates", title: qsTrc("project", "Check for updates") })
+                    items.push({ id: "diagnostics", title: qsTrc("project", "Send diagnostics…") })
+                    return items
+                }
 
                 onHandleMenuItem: function(itemId) {
                     if (itemId === "folder") {
@@ -141,6 +145,10 @@ Item {
                         folderRow.forceShown = true
                     } else if (itemId === "signOut") {
                         root.driveModel.signOut()
+                    } else if (itemId === "updates") {
+                        root.driveModel.checkForUpdates()
+                    } else if (itemId === "diagnostics") {
+                        root.driveModel.shareDiagnostics()
                     }
                 }
             }

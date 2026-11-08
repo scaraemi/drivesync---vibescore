@@ -30,6 +30,7 @@
 #include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "global/iinteractive.h"
+#include "global/iglobalconfiguration.h"
 #include "global/io/ifilesystem.h"
 #include "project/iprojectconfiguration.h"
 
@@ -54,6 +55,7 @@ class DriveService : public QObject, public IDriveService, public muse::Contexta
 
     muse::GlobalInject<muse::io::IFileSystem> fileSystem;
     muse::GlobalInject<project::IProjectConfiguration> projectConfiguration;
+    muse::GlobalInject<muse::IGlobalConfiguration> globalConfiguration;
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
@@ -89,6 +91,8 @@ public:
     void createFolder(const QString& parentRelPath, const QString& name) override;
     void rename(const QString& relPath, const QString& newName) override;
     void move(const QString& relPath, const QString& targetFolderRelPath) override;
+    void shareDiagnostics() override;
+    void checkForUpdates(bool userAsked) override;
 
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) override;
 
@@ -141,6 +145,11 @@ private:
                   const QString& toParentId);
     void moveItems(const QString& fromRelPath, const QString& toRelPath);
     void showError(const std::string& title, const QString& text);
+
+    // Diagnostics and updates (driveservice_extras.cpp)
+    void initExtras();
+    QString logsPath() const;
+    void offerCrashReport();
 
     QNetworkAccessManager* m_nam = nullptr;
     std::unique_ptr<drivesync::SettingsTokenStore> m_tokenStore;

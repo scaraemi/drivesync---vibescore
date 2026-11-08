@@ -53,6 +53,7 @@ jobs:
           TAG="drive-$(date -u +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
           mkdir release
           find artifacts -name '*.apk' -exec cp {} release/VibeScore-Drive-android-arm64.apk \;
+          find artifacts -name '*-symbols.so.xz' -exec cp {} release/VibeScore-Drive-android-arm64-symbols.so.xz \;
           find artifacts -name '*.msi' -exec cp {} release/MuseScore-Drive-windows-x64.msi \;
           if [ ! -f release/MuseScore-Drive-windows-x64.msi ]; then
             # No installer: the archive (unpack it and start bin\MuseScore4.exe)

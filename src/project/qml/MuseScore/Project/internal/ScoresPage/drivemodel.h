@@ -95,6 +95,9 @@ public:
     //! Where an item can be moved: [{ text, value }], the Drive folder first ("" = it)
     Q_INVOKABLE QVariantList moveTargets(const QString& path) const;
 
+    Q_INVOKABLE void shareDiagnostics();
+    Q_INVOKABLE void checkForUpdates();
+
 signals:
     void statusChanged();
     //! A sync run finished: the scores of the folder may have changed
