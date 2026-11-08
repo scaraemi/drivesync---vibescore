@@ -11,6 +11,13 @@ set(VS_DRIVE_CLIENT_ID "" CACHE STRING "Google OAuth client id (Desktop app) for
 set(VS_DRIVE_CLIENT_SECRET "" CACHE STRING "Google OAuth client secret of that client")
 set(VS_DRIVE_FOLDER_ID "" CACHE STRING "Drive folder used until the user chooses one")
 
+# CI passes them as environment variables too (repository secrets)
+foreach(VAR VS_DRIVE_CLIENT_ID VS_DRIVE_CLIENT_SECRET VS_DRIVE_FOLDER_ID)
+    if ("${${VAR}}" STREQUAL "" AND DEFINED ENV{${VAR}})
+        set(${VAR} "$ENV{${VAR}}")
+    endif()
+endforeach()
+
 muse_create_module(drive NO_UNITY)
 
 target_sources(drive PRIVATE
@@ -20,6 +27,8 @@ target_sources(drive PRIVATE
 
     internal/driveservice.cpp
     internal/driveservice.h
+    internal/heartbeatfile.cpp
+    internal/heartbeatfile.h
 
     internal/core/driveclient.cpp
     internal/core/driveclient.h

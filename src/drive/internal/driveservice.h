@@ -31,6 +31,7 @@
 #include "project/iprojectconfiguration.h"
 
 #include "../idriveservice.h"
+#include "heartbeatfile.h"
 
 class QNetworkAccessManager;
 
@@ -82,13 +83,18 @@ private:
     void scheduleSync(int delayMs);
     void onFinished(const drivesync::SyncReport& report);
     void watchCurrentProject();
+    void markOpenProject();
     bool isOpenInApp(const QString& relPath) const;
+    QString openMarkerPath(const QString& relPath) const;
 
     QNetworkAccessManager* m_nam = nullptr;
     std::unique_ptr<drivesync::SettingsTokenStore> m_tokenStore;
     drivesync::GoogleAuth* m_auth = nullptr;
     drivesync::DriveClient* m_client = nullptr;
     drivesync::SyncEngine* m_engine = nullptr;
+
+    std::unique_ptr<HeartbeatFile> m_syncLock;
+    std::unique_ptr<HeartbeatFile> m_openMarker;
 
     QTimer m_syncTimer;
     bool m_syncAgain = false;

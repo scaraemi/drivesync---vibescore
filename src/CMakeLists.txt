@@ -101,8 +101,9 @@ if (MUE_CONFIGURATION_IS_APPMOBILE)
     add_subdirectory(mobile)
 endif()
 
-# Google Drive folder of scores. Not in the web app: the sign-in needs a loopback server
-if (MUE_CONFIGURATION_IS_APPMOBILE AND NOT OS_IS_WASM)
+# Google Drive folder of scores (VibeScore on Android, MuseScore Studio on desktop).
+# Not in the web app: the sign-in needs a loopback server
+if (NOT OS_IS_WASM AND (MUE_CONFIGURATION_IS_APPMOBILE OR MUSESCORE_BUILD_CONFIGURATION MATCHES "^app(-portable)?$"))
     add_subdirectory(drive)
 endif()
 

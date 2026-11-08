@@ -190,6 +190,9 @@ add_to_link_if_exists(print)
 add_to_link_if_exists(project)
 add_to_link_if_exists(mobile)
 add_to_link_if_exists(drive)
+if (TARGET drive)
+    set(MUE_APP_HAS_DRIVE ON)
+endif()
 
 
 set(MSCORE_APPEND_SRC)
@@ -313,6 +316,10 @@ target_include_directories(MuseScoreStudio PRIVATE
 ###########################################
 
 target_link_libraries(MuseScoreStudio PRIVATE ${LINK_LIB} ${COVERAGE_LINK_FLAGS})
+
+if (MUE_APP_HAS_DRIVE)
+    target_compile_definitions(MuseScoreStudio PRIVATE MUE_APP_HAS_DRIVE)
+endif()
 
 if (CC_IS_EMCC)
     target_link_options(MuseScoreStudio PRIVATE ${EMCC_LINKER_FLAGS})

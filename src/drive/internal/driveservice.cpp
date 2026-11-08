@@ -18,6 +18,7 @@
  */
 #include "driveservice.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -59,6 +60,8 @@ static constexpr int SYNC_AFTER_SAVE_MS = 1500;
 static constexpr int SYNC_AFTER_CLOSE_MS = 500;
 //! Coming back to the app syncs, at most once in this time
 static constexpr int MIN_SECS_BETWEEN_FOREGROUND_SYNCS = 60;
+//! Another process (another MuseScore window) is syncing: try again after this
+static constexpr int SYNC_BUSY_RETRY_MS = 30 * 1000;
 
 static QString deviceLabel()
 {
@@ -137,14 +140,44 @@ void DriveService::init()
     scheduleSync(SYNC_AFTER_START_MS);
 }
 
-void DriveService::watchCurrentProject()
+QString DriveService::openMarkerPath(const QString& relPath) const
 {
+    const QByteArray key = QCryptographicHash::hash(relPath.toUtf8(), QCryptographicHash::Sha1).toHex();
+    return rootPath().toQString() + "/.drivesync/open/" + QString::fromLatin1(key);
+}
+
+void DriveService::markOpenProject()
+{
+    // Tells the other processes of the app (desktop: one per open score) that this score is open here
+    m_openMarker.reset();
+
     project::INotationProjectPtr project = globalContext()->currentProject();
     if (!project) {
         return;
     }
 
+    const QString root = QDir::cleanPath(rootPath().toQString());
+    const QString path = QDir::cleanPath(project->path().toQString());
+    if (!path.startsWith(root + "/")) {
+        return;
+    }
+
+    m_openMarker = std::make_unique<HeartbeatFile>(openMarkerPath(path.mid(root.size() + 1)));
+    m_openMarker->acquire();
+}
+
+void DriveService::watchCurrentProject()
+{
+    project::INotationProjectPtr project = globalContext()->currentProject();
+    if (!project) {
+        m_openMarker.reset();
+        return;
+    }
+
+    markOpenProject();
+
     project->saveComplited().onReceive(this, [this](const io::path_t& path, project::SaveMode) {
+        markOpenProject(); // "Save as" may have moved it into or out of the folder
         const QString root = QDir::cleanPath(rootPath().toQString()) + "/";
         if (QDir::cleanPath(path.toQString()).startsWith(root)) {
             scheduleSync(SYNC_AFTER_SAVE_MS);
@@ -245,11 +278,11 @@ Ret DriveService::setFolder(const QString& linkOrId)
 bool DriveService::isOpenInApp(const QString& relPath) const
 {
     project::INotationProjectPtr project = globalContext()->currentProject();
-    if (!project) {
-        return false;
+    if (project && QDir::cleanPath(project->path().toQString()) == QDir::cleanPath(rootPath().toQString() + "/" + relPath)) {
+        return true;
     }
-    const QString open = QDir::cleanPath(project->path().toQString());
-    return open == QDir::cleanPath(rootPath().toQString() + "/" + relPath);
+    // Open in another process of the app
+    return HeartbeatFile::isHeldByAnyone(openMarkerPath(relPath));
 }
 
 void DriveService::scheduleSync(int delayMs)
@@ -274,6 +307,16 @@ void DriveService::sync()
 
     fileSystem()->makePath(rootPath());
 
+    // One sync at a time over the folder, across the app's processes
+    if (!m_syncLock) {
+        m_syncLock = std::make_unique<HeartbeatFile>(rootPath().toQString() + "/.drivesync/sync.lock");
+    }
+    if (!m_syncLock->acquire()) {
+        LOGI() << "Drive sync: another window is syncing, trying again later";
+        m_syncTimer.start(SYNC_BUSY_RETRY_MS);
+        return;
+    }
+
     drivesync::SyncConfig config;
     config.localRoot = rootPath().toQString();
     config.remoteRootId = folderId();
@@ -295,6 +338,7 @@ void DriveService::onFinished(const drivesync::SyncReport& report)
 {
     m_engine->deleteLater();
     m_engine = nullptr;
+    m_syncLock->release();
 
     LOGI() << "Drive sync finished: downloaded " << report.downloaded << ", uploaded " << report.uploaded
            << ", deleted here " << report.deletedLocal << ", deleted on Drive " << report.deletedRemote

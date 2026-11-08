@@ -1,0 +1,62 @@
+# Keeps this fork up to date with VibeScore (m1omg/vibescore) and, when something changed, starts a
+# Drive release (Android APK + Windows installer). The Drive changes stay on top as a merge.
+# A merge conflict stops here: it is reported in the run, and the branch is left as it was.
+name: 'Drive: sync with VibeScore'
+
+on:
+  schedule:
+    - cron: '17 3 * * 1' # Mondays, 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Build and publish a release even without upstream changes'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: vibescore
+          fetch-depth: 0
+
+      - name: Merge VibeScore
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/m1omg/vibescore.git
+          git fetch --no-tags upstream vibescore
+
+          NEW=$(git rev-list --count HEAD..upstream/vibescore)
+          echo "Upstream commits not here yet: $NEW"
+          if [ "$NEW" = "0" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git merge --no-edit upstream/vibescore; then
+            git merge --abort
+            echo "::error::Merge conflict with VibeScore: merge upstream/vibescore by hand (the Drive files are src/drive, the Scores page and the build workflows)."
+            exit 1
+          fi
+          if ! git push origin HEAD:vibescore; then
+            # The workflow token cannot change files under .github/workflows
+            echo "::error::Push refused: VibeScore changed its workflows. Use 'Sync fork' on the repository page, then run 'Drive: release'."
+            exit 1
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with the workflow token starts no other workflow; a dispatch does
+      - name: Start the release
+        if: steps.merge.outputs.changed == 'true' || inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run drive_release.yml --ref vibescore
