@@ -5,11 +5,6 @@ name: 'Drive: release (macOS)'
 
 on:
   workflow_dispatch:
-    inputs:
-      runner:
-        description: 'macOS runner image'
-        default: 'macos-15-intel'
-        required: false
   push:
     branches:
       - drive-release-macos
@@ -17,16 +12,12 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: drive-release-macos
-  cancel-in-progress: true
-
 jobs:
   macos:
     uses: ./.github/workflows/build_macos.yml
     with:
       build_mode: 'devel'
-      runner: ${{ inputs.runner || 'macos-15-intel' }}
+      runner: 'macos-15-intel'
     secrets: inherit
 
   add_to_release:
