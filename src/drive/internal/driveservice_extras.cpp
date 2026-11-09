@@ -117,7 +117,7 @@ void DriveService::offerCrashReport()
     send.role = IInteractive::ButtonRole::AcceptRole;
 
     interactive()->question(muse::trc("drive", "The app closed because of an error"),
-                            IInteractive::Text(muse::trc("drive", "Send the report? It has the app's log, with the names "
+                            IInteractive::Text(muse::trc("drive", "Send the report? It has the app’s log, with the names "
                                                                   "of the scores opened, and no score content.")),
                             { no, send }, send.btn)
     .onResolve(this, [this, sendBtn = send.btn](const IInteractive::Result& result) {

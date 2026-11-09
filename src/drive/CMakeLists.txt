@@ -50,11 +50,18 @@ target_sources(drive PRIVATE
 )
 
 # Which build this is, and where its updates are published: from CI (GitHub Actions) when there
-string(SUBSTRING "$ENV{GITHUB_SHA}" 0 7 VS_BUILD_ID)
-if (VS_BUILD_ID STREQUAL "")
-    set(VS_BUILD_ID "local")
+if (NOT DEFINED CACHE{VS_BUILD_ID})
+    string(SUBSTRING "$ENV{GITHUB_SHA}" 0 7 VS_BUILD_ID_NOW)
+    if (VS_BUILD_ID_NOW STREQUAL "")
+        set(VS_BUILD_ID_NOW "local")
+    endif()
+    set(VS_BUILD_ID "${VS_BUILD_ID_NOW}" CACHE STRING "Which build this is (commit)")
 endif()
-string(TIMESTAMP VS_BUILD_TIME "%s" UTC)
+# Kept in the cache: the MSI packaging configures the build again, and a new value would rebuild the module there
+if (NOT DEFINED CACHE{VS_BUILD_TIME})
+    string(TIMESTAMP VS_BUILD_TIME_NOW "%s" UTC)
+    set(VS_BUILD_TIME "${VS_BUILD_TIME_NOW}" CACHE STRING "When this build was made (seconds since 1970)")
+endif()
 set(VS_UPDATE_REPO "$ENV{GITHUB_REPOSITORY}" CACHE STRING "GitHub repository whose releases are this app's updates")
 
 target_compile_definitions(drive PRIVATE
