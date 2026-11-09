@@ -1,0 +1,53 @@
+# Builds MuseScore Studio for macOS with the Drive tab and adds the .dmg to the latest Drive release, without
+# building the other platforms again. Started by pushing to the branch drive-release-macos (or by hand), e.g. when
+# GitHub had no macOS machine free for "Drive: release".
+name: 'Drive: release (macOS)'
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'macOS runner image'
+        default: 'macos-15-intel'
+        required: false
+  push:
+    branches:
+      - drive-release-macos
+
+permissions:
+  contents: write
+
+concurrency:
+  group: drive-release-macos
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    uses: ./.github/workflows/build_macos.yml
+    with:
+      build_mode: 'devel'
+      runner: ${{ inputs.runner || 'macos-15-intel' }}
+    secrets: inherit
+
+  add_to_release:
+    needs: [macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download the app
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Add it to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG=$(find artifacts -name 'MuseScore-*.dmg' | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No .dmg in the build artifacts"
+            exit 1
+          fi
+          cp "$DMG" MuseScore-Drive-macos.dmg
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          echo "Adding to $TAG"
+          gh release upload "$TAG" MuseScore-Drive-macos.dmg --repo "$GITHUB_REPOSITORY" --clobber
