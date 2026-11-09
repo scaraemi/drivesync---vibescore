@@ -59,6 +59,13 @@ echo "Rename Resources/qml to Resources/qml_mu"
 mv ${APP_PATH}/Contents/Resources/qml ${APP_PATH}/Contents/Resources/qml_mu
 sed -i '' 's:Resources/qml:Resources/qml_mu:g' ${APP_PATH}/Contents/Resources/qt.conf
 
+if ! $DO_SIGN; then
+    # No Developer ID: an ad-hoc signature, without which Apple silicon does not run the app (macdeployqt and the
+    # changes above invalidate the linker's one). Gatekeeper still asks: open it once with right-click > Open.
+    echo "Ad-hoc sign"
+    codesign --force --deep --sign - "${APP_PATH}"
+fi
+
 if $DO_SIGN; then
     # Re-sign appex to ensure proper entitlements
     echo "Re-sign appex"

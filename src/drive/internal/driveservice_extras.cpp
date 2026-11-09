@@ -238,6 +238,8 @@ void DriveService::checkForUpdates(bool userAsked)
         // The file for this platform
 #ifdef Q_OS_ANDROID
         const QStringList suffixes { ".apk" };
+#elif defined(Q_OS_MACOS)
+        const QStringList suffixes { ".dmg" };
 #else
         const QStringList suffixes { ".msi", ".7z" };
 #endif

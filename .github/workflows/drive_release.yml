@@ -1,4 +1,4 @@
-# Builds VibeScore for Android and MuseScore Studio for Windows, both with the Drive tab, and publishes
+# Builds VibeScore for Android and MuseScore Studio for Windows and macOS, all with the Drive tab, and publishes
 # them as a GitHub release (tag drive-<date>-<commit>). Started by "Drive: sync with VibeScore" or by hand.
 #
 # Updates:
@@ -6,6 +6,8 @@
 #   The APKs must all be signed with the same key: set ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASS,
 #   otherwise every build has a throwaway key and the app must be uninstalled to update.
 # - Windows: run the new .msi; with WIN_MSI_TESTING_MU4_GUID set (a fixed GUID) it replaces the previous one.
+# - macOS: the .dmg (universal, ad-hoc signed without an Apple Developer ID: the first time, right-click > Open).
+#   A platform that fails to build is left out of the release (see the run).
 name: 'Drive: release'
 
 on:
@@ -37,8 +39,15 @@ jobs:
       msi: true
     secrets: inherit
 
+  macos:
+    uses: ./.github/workflows/build_macos.yml
+    with:
+      build_mode: 'devel'
+    secrets: inherit
+
   release:
-    needs: [android, windows]
+    needs: [android, windows, macos]
+    if: always() && (needs.android.result == 'success' || needs.windows.result == 'success' || needs.macos.result == 'success')
     runs-on: ubuntu-24.04
     steps:
       - name: Download the apps
@@ -55,6 +64,7 @@ jobs:
           find artifacts -name '*.apk' -exec cp {} release/VibeScore-Drive-android-arm64.apk \;
           find artifacts -name '*-symbols.so.xz' -exec cp {} release/VibeScore-Drive-android-arm64-symbols.so.xz \;
           find artifacts -name '*.msi' -exec cp {} release/MuseScore-Drive-windows-x64.msi \;
+          find artifacts -name 'MuseScore-*.dmg' -exec cp {} release/MuseScore-Drive-macos.dmg \;
           if [ ! -f release/MuseScore-Drive-windows-x64.msi ]; then
             # No installer: the archive (unpack it and start bin\MuseScore4.exe)
             find artifacts -name 'MuseScore-*.7z' -exec cp {} release/MuseScore-Drive-windows-x64.7z \;
@@ -67,7 +77,10 @@ jobs:
           (cd release && sha256sum -- * > SHA256SUMS.txt)
 
           cat > notes.md <<EOF
-          VibeScore (Android) and MuseScore Studio (Windows) with the Google Drive tab.
+          VibeScore (Android) and MuseScore Studio (Windows, macOS) with the Google Drive tab.
+
+          macOS: open the .dmg and drag the app to Applications. It is not signed with an Apple Developer ID:
+          the first time, right-click the app > Open (or System Settings > Privacy & Security > Open Anyway).
 
           Commit: ${GITHUB_SHA}
           EOF
