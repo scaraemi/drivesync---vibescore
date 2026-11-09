@@ -21,6 +21,7 @@
 #include <memory>
 
 #include <QHash>
+#include <QUrl>
 #include <QObject>
 #include <QSet>
 #include <QTimer>
@@ -159,6 +160,9 @@ private:
     void initExtras();
     QString logsPath() const;
     void offerCrashReport();
+    void downloadAndInstall(const QString& tag, const QUrl& url, qint64 expectedSize);
+    void installDownloadedUpdate(const QString& apkPath);
+    void onAppActiveForUpdate();
 
     QNetworkAccessManager* m_nam = nullptr;
     std::unique_ptr<drivesync::SettingsTokenStore> m_tokenStore;
@@ -191,6 +195,8 @@ private:
     QTimer m_updateTimer;
     QString m_updateDismissed;             // "Later" for this release, while the app runs
     bool m_updatePromptOpen = false;
+    bool m_updateDownloading = false;
+    QString m_pendingUpdateApk;            // downloaded, waiting for the permission to install
 
     QString m_accountName;
     QString m_accountEmail;

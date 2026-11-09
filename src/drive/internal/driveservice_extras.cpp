@@ -21,9 +21,11 @@
 #include "driveservice.h"
 
 #include <algorithm>
+#include <memory>
 
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -62,6 +64,7 @@ using namespace muse;
 #endif
 
 static const QString CRASH_SEEN_KEY = QStringLiteral("drive/crashReportsSeenUntil");
+static const QString UPDATE_SKIPPED_KEY = QStringLiteral("drive/updateSkipped");
 static const QString UPDATE_CHECKED_KEY = QStringLiteral("drive/updateCheckedAt");
 
 static constexpr int CRASH_OFFER_DELAY_MS = 4000;
@@ -92,6 +95,7 @@ void DriveService::initExtras()
             if (state != Qt::ApplicationActive) {
                 return;
             }
+            onAppActiveForUpdate();
             const qint64 last = QSettings().value(UPDATE_CHECKED_KEY).toLongLong();
             if (QDateTime::currentSecsSinceEpoch() - last >= UPDATE_RECHECK_SECS) {
                 QTimer::singleShot(2000, this, [this]() { checkForUpdates(false); });
@@ -224,8 +228,10 @@ void DriveService::checkForUpdates(bool userAsked)
             return;
         }
 
-        // "Later": not again while the app runs (it is offered again at the next start)
-        if (!userAsked && (m_updatePromptOpen || m_updateDismissed == tag)) {
+        // "Later": not again while the app runs (it is offered again at the next start);
+        // "Don't ask again": never for this release (a newer one is offered)
+        if (!userAsked && (m_updatePromptOpen || m_updateDownloading || m_updateDismissed == tag
+                           || QSettings().value(UPDATE_SKIPPED_KEY).toString() == tag)) {
             return;
         }
 
@@ -236,11 +242,13 @@ void DriveService::checkForUpdates(bool userAsked)
         const QStringList suffixes { ".msi", ".7z" };
 #endif
         QString download;
+        qint64 downloadSize = 0;
         for (const QString& suffix : suffixes) {
             for (const QJsonValue& asset : release.value("assets").toArray()) {
                 const QString name = asset.toObject().value("name").toString();
                 if (download.isEmpty() && name.endsWith(suffix)) {
                     download = asset.toObject().value("browser_download_url").toString();
+                    downloadSize = asset.toObject().value("size").toInteger();
                 }
             }
         }
@@ -250,23 +258,149 @@ void DriveService::checkForUpdates(bool userAsked)
 
         IInteractive::ButtonData later(int(IInteractive::Button::CustomButton) + 1, muse::trc("drive", "Later"));
         later.role = IInteractive::ButtonRole::RejectRole;
-        IInteractive::ButtonData get(int(IInteractive::Button::CustomButton) + 2, muse::trc("drive", "Download"), true);
+
+#ifdef Q_OS_ANDROID
+        const bool installHere = download.endsWith(".apk");
+#else
+        const bool installHere = false;
+#endif
+        const std::string question = installHere
+                                     ? muse::trc("drive", "Download and install it now?")
+                                     : muse::trc("drive", "Download it? Then open the downloaded file to install it over this one.");
+        IInteractive::ButtonData get(int(IInteractive::Button::CustomButton) + 2,
+                                     installHere ? muse::trc("drive", "Install") : muse::trc("drive", "Download"), true);
         get.role = IInteractive::ButtonRole::AcceptRole;
 
         //: %1 is a date
-        const QString text = muse::qtrc("drive", "A new version from %1 is available. Download it? Then open the "
-                                                 "downloaded file to install it over this one.")
-                             .arg(QLocale().toString(published.toLocalTime().date(), QLocale::ShortFormat));
+        const QString text = muse::qtrc("drive", "A new version from %1 is available.")
+                             .arg(QLocale().toString(published.toLocalTime().date(), QLocale::ShortFormat))
+                             + " " + QString::fromStdString(question);
         m_updatePromptOpen = true;
         interactive()->question(muse::trc("drive", "Update available"), IInteractive::Text(text.toStdString()),
-                                { later, get }, get.btn)
-        .onResolve(this, [this, tag, download, getBtn = get.btn](const IInteractive::Result& result) {
+                                { later, get }, get.btn, IInteractive::Option::WithDontShowAgainCheckBox)
+        .onResolve(this, [this, tag, download, downloadSize, installHere, getBtn = get.btn](const IInteractive::Result& result) {
             m_updatePromptOpen = false;
             if (result.isButton(getBtn)) {
-                interactive()->openUrl(QUrl(download));
-            } else {
-                m_updateDismissed = tag;
+                if (installHere) {
+                    downloadAndInstall(tag, QUrl(download), downloadSize);
+                } else {
+                    interactive()->openUrl(QUrl(download));
+                }
+                return;
+            }
+            m_updateDismissed = tag;
+            if (!result.showAgain()) {
+                QSettings().setValue(UPDATE_SKIPPED_KEY, tag);
             }
         });
     });
+}
+
+// Android: the APK is downloaded here and handed to the system installer (the app asks once to be allowed to)
+void DriveService::downloadAndInstall(const QString& tag, const QUrl& url, qint64 expectedSize)
+{
+#ifdef Q_OS_ANDROID
+    const QString dir = globalConfiguration()->userAppDataPath().toQString() + "/updates";
+    QDir(dir).removeRecursively();
+    QDir().mkpath(dir);
+    const QString path = dir + "/" + tag + ".apk";
+
+    auto file = std::make_shared<QFile>(path);
+    if (!file->open(QIODevice::WriteOnly)) {
+        interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(file->errorString().toStdString()));
+        return;
+    }
+
+    QNetworkRequest request(url);
+    request.setRawHeader("User-Agent", "VibeScore-Drive");
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+    QNetworkReply* reply = m_nam->get(request);
+    m_updateDownloading = true;
+
+    interactive()->info(muse::trc("drive", "Update"),
+                        IInteractive::Text(muse::trc("drive", "Downloading the update. The installation starts when it is done.")));
+
+    connect(reply, &QNetworkReply::readyRead, this, [reply, file]() { file->write(reply->readAll()); });
+    connect(reply, &QNetworkReply::finished, this, [this, reply, file, path, expectedSize]() {
+        reply->deleteLater();
+        m_updateDownloading = false;
+        file->write(reply->readAll());
+        file->close();
+
+        if (reply->error() != QNetworkReply::NoError || (expectedSize > 0 && file->size() != expectedSize)) {
+            const std::string why = reply->error() != QNetworkReply::NoError
+                                    ? reply->errorString().toStdString()
+                                    : muse::trc("drive", "The download is incomplete. Try again later.");
+            QFile::remove(path);
+            interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(why));
+            return;
+        }
+
+        const QJniObject context = QNativeInterface::QAndroidApplication::context();
+        const bool allowed = QJniObject::callStaticMethod<jboolean>("io/github/m1omg/vibescore/VibeScoreUpdate",
+                                                                    "canInstallPackages",
+                                                                    "(Landroid/content/Context;)Z", context.object());
+        QJniEnvironment env;
+        env.checkAndClearExceptions();
+        if (allowed) {
+            installDownloadedUpdate(path);
+            return;
+        }
+
+        // Android lets the user allow it on a system page; the installation starts when they come back
+        m_pendingUpdateApk = path;
+        interactive()->info(muse::trc("drive", "Update"),
+                            IInteractive::Text(muse::trc("drive", "Allow the app to install updates on the next page, "
+                                                                  "then come back here: the installation starts.")))
+        .onResolve(this, [](const IInteractive::Result&) {
+            const QJniObject ctx = QNativeInterface::QAndroidApplication::context();
+            QJniObject::callStaticMethod<void>("io/github/m1omg/vibescore/VibeScoreUpdate", "openInstallSettings",
+                                               "(Landroid/content/Context;)V", ctx.object());
+            QJniEnvironment e;
+            e.checkAndClearExceptions();
+        });
+    });
+#else
+    UNUSED(tag);
+    UNUSED(expectedSize);
+    interactive()->openUrl(url);
+#endif
+}
+
+void DriveService::installDownloadedUpdate(const QString& apkPath)
+{
+#ifdef Q_OS_ANDROID
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    const QJniObject path = QJniObject::fromString(apkPath);
+    QJniObject::callStaticMethod<void>("io/github/m1omg/vibescore/VibeScoreUpdate", "installApk",
+                                       "(Landroid/content/Context;Ljava/lang/String;)V",
+                                       context.object(), path.object<jstring>());
+    QJniEnvironment env;
+    if (env.checkAndClearExceptions()) {
+        LOGE() << "Failed to start the installation of the update";
+    }
+#else
+    UNUSED(apkPath);
+#endif
+}
+
+void DriveService::onAppActiveForUpdate()
+{
+#ifdef Q_OS_ANDROID
+    if (m_pendingUpdateApk.isEmpty()) {
+        return;
+    }
+    const QString path = m_pendingUpdateApk;
+    m_pendingUpdateApk.clear();
+
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    const bool allowed = QJniObject::callStaticMethod<jboolean>("io/github/m1omg/vibescore/VibeScoreUpdate",
+                                                                "canInstallPackages",
+                                                                "(Landroid/content/Context;)Z", context.object());
+    QJniEnvironment env;
+    env.checkAndClearExceptions();
+    if (allowed && QFile::exists(path)) {
+        QTimer::singleShot(500, this, [this, path]() { installDownloadedUpdate(path); });
+    }
+#endif
 }

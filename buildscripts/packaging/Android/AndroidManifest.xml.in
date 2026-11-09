@@ -15,6 +15,8 @@
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Updates downloaded by the app (see VibeScoreUpdate): Android asks the user once -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <supports-screens
         android:anyDensity="true"
