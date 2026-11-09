@@ -29,6 +29,12 @@
 #include <emscripten.h>
 #endif
 
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+#include <QDateTime>
+#include <QGuiApplication>
+#include <QSettings>
+#endif
+
 #include "async/async.h"
 #include "translation.h"
 
@@ -43,6 +49,48 @@ using namespace muse::actions;
 
 static const muse::UriQuery FIRST_LAUNCH_SETUP_URI("musescore://firstLaunchSetup?floating=true");
 static const muse::UriQuery WELCOME_DIALOG_URI("musescore://welcomedialog");
+
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+//! When the app last went to the background. The system ends apps in the background to free memory, and then
+//! the scores that were open come back; after a longer time away, or after the user closed the app, it starts
+//! from the home page instead (the scores are in the library, with their unsaved changes)
+static const char* BACKGROUND_SINCE_KEY = "vibescore/backgroundSince";
+static constexpr qint64 RESUME_WITHIN_SECS = 10 * 60;
+
+static void trackBackground()
+{
+    static bool tracking = false;
+    if (tracking || !qGuiApp) {
+        return;
+    }
+    tracking = true;
+
+    QObject::connect(qGuiApp, &QGuiApplication::applicationStateChanged, qGuiApp, [](Qt::ApplicationState state) {
+        QSettings settings;
+        if (state == Qt::ApplicationActive) {
+            settings.remove(BACKGROUND_SINCE_KEY);
+        } else if (state == Qt::ApplicationSuspended || state == Qt::ApplicationHidden) {
+            if (!settings.contains(BACKGROUND_SINCE_KEY)) {
+                settings.setValue(BACKGROUND_SINCE_KEY, QDateTime::currentSecsSinceEpoch());
+            }
+        }
+        settings.sync();
+    });
+}
+
+//! Ended by the system shortly after going to the background (not closed by the user, not long ago)
+static bool endedInBackgroundRecently()
+{
+    QSettings settings;
+    const qint64 since = settings.value(BACKGROUND_SINCE_KEY, 0).toLongLong();
+    settings.remove(BACKGROUND_SINCE_KEY);
+    if (since <= 0) {
+        return false;
+    }
+    const qint64 away = QDateTime::currentSecsSinceEpoch() - since;
+    return away >= 0 && away <= RESUME_WITHIN_SECS;
+}
+#endif
 
 static StartupModeType modeTypeTromString(const std::string& str)
 {
@@ -155,6 +203,12 @@ void StartupScenario::runAfterSplashScreen()
     if (m_startupCompleted) {
         return;
     }
+
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    const bool resumeAfterBackground = endedInBackgroundRecently();
+    trackBackground();
+    m_resumeAfterBackground = resumeAfterBackground;
+#endif
 
     StartupModeType modeType = resolveStartupModeType();
     if (multiwindowsProvider()->windowCount() == 1 && sessionsManager()->hasProjectsForRestore()) {
@@ -350,26 +404,16 @@ void StartupScenario::restoreLastSession()
         return;
     }
 
-    // Otherwise closing the page is the usual way to quit (or the page ended on the screen, which could happen again
-    // with the same score), so the scores that were open then are not opened again at every start (a big one takes
-    // long to open): they are in the library, and their unsaved changes are kept and come back when they are opened.
-    // Only a new score that was never saved is opened again, as there is no other way back to it
-    io::paths_t newProjects;
-    for (const io::path_t& path : configuration()->sessionProjectsPaths()) {
-        if (projectAutoSaver()->isAutosaveOfNewlyCreatedProject(path) && QFileInfo::exists(path.toQString())) {
-            newProjects.push_back(path);
-        }
-    }
-
-    sessionsManager()->reset();
-
-    for (const io::path_t& path : newProjects) {
-        dispatcher()->dispatch("file-open", ActionData::make_arg1<QUrl>(path.toQUrl()));
-    }
+    restoreOnlyNewScores();
 #elif defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
-    // Mobile systems end apps that are in the background instead of asking them to quit,
-    // so this is the usual way back to the app: continue where the user left off
-    sessionsManager()->restore();
+    // Mobile systems end apps that are in the background instead of asking them to quit: coming back soon after,
+    // continue where the user left off. Otherwise (the user closed the app, or it has been a while) start from the
+    // home page, and not with the last score at every start
+    if (m_resumeAfterBackground) {
+        sessionsManager()->restore();
+    } else {
+        restoreOnlyNewScores();
+    }
 #else
     auto promise = interactive()->question(muse::trc("appshell", "The previous session quit unexpectedly."),
                                            muse::trc("appshell", "Do you want to restore the session?"),
@@ -385,6 +429,25 @@ void StartupScenario::restoreLastSession()
         }
     });
 #endif
+}
+
+//! The scores that were open are in the library, and their unsaved changes are kept and come back when they are
+//! opened (a big one takes long to open): only a new score that was never saved is opened again, as there is no
+//! other way back to it
+void StartupScenario::restoreOnlyNewScores()
+{
+    io::paths_t newProjects;
+    for (const io::path_t& path : configuration()->sessionProjectsPaths()) {
+        if (projectAutoSaver()->isAutosaveOfNewlyCreatedProject(path) && QFileInfo::exists(path.toQString())) {
+            newProjects.push_back(path);
+        }
+    }
+
+    sessionsManager()->reset();
+
+    for (const io::path_t& path : newProjects) {
+        dispatcher()->dispatch("file-open", ActionData::make_arg1<QUrl>(path.toQUrl()));
+    }
 }
 
 void StartupScenario::removeProjectsUnsavedChanges(const io::paths_t& projectsPaths)

@@ -82,11 +82,13 @@ private:
     void openScore(const project::ProjectFile& file);
 
     void restoreLastSession();
+    void restoreOnlyNewScores();
     void removeProjectsUnsavedChanges(const muse::io::paths_t& projectsPaths);
 
     std::string m_startupTypeStr;
     project::ProjectFile m_startupScoreFile;
     bool m_startupCompleted = false;
+    bool m_resumeAfterBackground = false; // mobile: ended by the system shortly after going to the background
     size_t m_activeUpdateCheckCount = 0;
 };
 }
