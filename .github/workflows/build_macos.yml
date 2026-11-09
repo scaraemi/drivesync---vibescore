@@ -38,16 +38,27 @@ on:
         default: ""
         type: string
         required: false
+      runner:
+        description: 'macOS runner image (macos-26 is often short of machines)'
+        default: 'macos-15'
+        type: string
+        required: false
 
 env:
-  DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
   # This information is public and can be extracted by anyone from the final .app file
   APPLE_TEAM_ID: 6EPAF2X3PR
 
 jobs:
   macos_universal:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     steps:
+    - name: Select Xcode
+      run: |
+        # The newest Xcode 26 of the image, else the newest one
+        XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+        if [ -z "$XCODE" ]; then XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1); fi
+        echo "Using $XCODE"
+        echo "DEVELOPER_DIR=$XCODE/Contents/Developer" | tee -a $GITHUB_ENV
     - name: Cancel Previous Runs
       uses: styfle/cancel-workflow-action@0.13.0
       with:
