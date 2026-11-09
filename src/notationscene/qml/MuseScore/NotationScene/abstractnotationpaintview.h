@@ -48,6 +48,7 @@
 #include "loopmarker.h"
 #include "continuouspanel.h"
 #include "abstractelementpopupmodel.h"
+#include "analysis/ianalysisservice.h"
 
 namespace mu::notation {
 class NotationViewTouchController;
@@ -88,6 +89,7 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     muse::ContextInject<muse::ui::IUiContextResolver> uiContextResolver = { this };
     muse::ContextInject<muse::ui::IMainWindow> mainWindow = { this };
     muse::ContextInject<muse::ui::IUiActionsRegister> actionsRegister = { this };
+    muse::ContextInject<analysis::IAnalysisService> analysisService = { this };
 
 public:
     explicit AbstractNotationPaintView(QQuickItem* parent = nullptr);

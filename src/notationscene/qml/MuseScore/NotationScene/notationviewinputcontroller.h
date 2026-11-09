@@ -40,6 +40,7 @@
 #include "global/iglobalconfiguration.h"
 #include "ui/idragcontroller.h"
 #include "ui/iuiconfiguration.h"
+#include "analysis/ianalysisservice.h"
 
 #include "abstractelementpopupmodel.h"
 
@@ -102,6 +103,8 @@ public:
     muse::ContextInject<playback::IPlaybackController> playbackController = { this };
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::ContextInject<muse::ui::IDragController> dragController = { this };
+    //! Analysis (drawings over the score): while on, it gets the pointer and the keys. Absent in some builds.
+    muse::ContextInject<analysis::IAnalysisService> analysisService = { this };
 
 public:
     NotationViewInputController(IControlledView* view, const muse::modularity::ContextPtr& iocCtx);
@@ -159,6 +162,7 @@ public:
     //! Whether a touch drag starting at this position should move what is there (a selected element or
     //! a grip) rather than pan the score
     bool isTouchDragTarget(const QPointF& viewPos) const;
+    bool isAnalysisActive() const;
     muse::PointF selectionElementPos() const;
 
 private:
@@ -249,6 +253,8 @@ private:
         QPointF physicalBeginPoint;
         muse::PointF logicalBeginPoint;
     } m_mouseDownInfo;
+
+    bool m_analysisPointerDown = false;
 
     struct DragMoveEvent {
         QPointF position;

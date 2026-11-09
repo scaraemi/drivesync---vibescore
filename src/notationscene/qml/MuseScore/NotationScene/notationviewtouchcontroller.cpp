@@ -268,6 +268,10 @@ void NotationViewTouchController::onTap(const QPointF& pos)
 
 void NotationViewTouchController::onLongPressTimeout()
 {
+    if (m_input->isAnalysisActive()) {
+        return; // no context menu while drawing on the score
+    }
+
     if (m_state != State::Pending) {
         return;
     }

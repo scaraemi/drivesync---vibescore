@@ -392,6 +392,21 @@ void DriveClient::trash(const QString& fileId, FileCallback callback)
                 QJsonObject { { "trashed", true } }, std::move(callback));
 }
 
+void DriveClient::about(AboutCallback callback)
+{
+    const QUrl url = apiUrl("/drive/v3/about", { { "fields", "user(displayName,emailAddress)" } });
+
+    execute([=](const QString& token) {
+        return m_nam->get(authorized(url, token));
+    }, [=](QNetworkReply* reply) {
+        const QJsonObject user = QJsonDocument::fromJson(reply->readAll()).object().value("user").toObject();
+        callback(Result<QPair<QString, QString> >::success(
+                     qMakePair(user.value("displayName").toString(), user.value("emailAddress").toString())));
+    }, [=](const DriveError& e) {
+        callback(Result<QPair<QString, QString> >::failure(e));
+    });
+}
+
 void DriveClient::moveRename(const QString& fileId, const QString& newName, const QString& fromParentId,
                              const QString& toParentId, FileCallback callback)
 {

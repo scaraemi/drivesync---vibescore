@@ -92,6 +92,9 @@ public:
     void rename(const QString& relPath, const QString& newName) override;
     void move(const QString& relPath, const QString& targetFolderRelPath) override;
     void shareDiagnostics() override;
+    QString accountName() const override;
+    QString accountEmail() const override;
+    muse::async::Notification accountChanged() const override;
     void checkForUpdates(bool userAsked) override;
 
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) override;
@@ -137,12 +140,18 @@ private:
     void loadCatalog();
     void saveCatalog() const;
     QString fileIdOf(const QString& relPath) const;
+    //! The analysis layers of a score (relative paths, on Drive or here)
+    QStringList companionsOf(const QString& scoreRelPath) const;
+    bool isScoreOnDevice(const QString& companionRelPath) const;
+    void loadAccount();
     QString folderIdOf(const QString& relPath) const;
 
     // Rename / move
     bool checkCanChange(const QString& relPath);
     void relocate(const QString& relPath, const QString& newRelPath, const QString& newName, const QString& fromParentId,
                   const QString& toParentId);
+    void relocateOne(const QString& relPath, const QString& newRelPath, const QString& newName, const QString& fromParentId,
+                     const QString& toParentId);
     void moveItems(const QString& fromRelPath, const QString& toRelPath);
     void showError(const std::string& title, const QString& text);
 
@@ -178,5 +187,9 @@ private:
     QString m_reopenAfterClose;            // relative path
 
     OpenScore m_open;
+
+    QString m_accountName;
+    QString m_accountEmail;
+    muse::async::Notification m_accountChanged;
 };
 }

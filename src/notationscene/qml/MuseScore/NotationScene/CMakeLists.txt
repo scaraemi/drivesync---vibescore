@@ -70,6 +70,8 @@ qt_add_qml_module(notationscene_qml
         internal/undohistorymodel.h
         internal/undoredotoolbarmodel.cpp
         internal/undoredotoolbarmodel.h
+        analysistoolbarmodel.cpp
+        analysistoolbarmodel.h
         loopmarker.cpp
         loopmarker.h
         notationcontextmenumodel.cpp
@@ -192,6 +194,7 @@ qt_add_qml_module(notationscene_qml
         internal/NotationSwitchButton.qml
         internal/NotationSwitchPanel.qml
         internal/NotationSwitchScrollArrowButton.qml
+        internal/AnalysisOverlay.qml
         internal/NoteInputBarActionDelegate.qml
         internal/NoteInputBarCustomisePopup.qml
         internal/PartDelegate.qml

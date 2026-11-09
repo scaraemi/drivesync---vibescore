@@ -289,6 +289,9 @@ QVariantList DriveModel::items() const
     QList<IDriveService::Item> shown;
     const QString search = m_searchText.trimmed();
     for (const IDriveService::Item& item : driveService()->items()) {
+        if (IDriveService::isCompanionFile(item.path)) {
+            continue; // analysis layers: shown with their score in the score view, not here
+        }
         if (!search.isEmpty()) {
             if (!item.isFolder && QFileInfo(item.path).completeBaseName().contains(search, Qt::CaseInsensitive)) {
                 shown << item;

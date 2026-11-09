@@ -662,8 +662,23 @@ void NotationViewInputController::wheelEvent(QWheelEvent* event)
     }
 }
 
+bool NotationViewInputController::isAnalysisActive() const
+{
+    return analysisService() && analysisService()->isActive();
+}
+
 void NotationViewInputController::mousePressEvent(QMouseEvent* event)
 {
+    if (isAnalysisActive()) {
+        // Drawing on the score: nothing in the score is selected or changed
+        m_mouseDownInfo.dragAction = MouseDownInfo::Nothing;
+        if (event->button() == Qt::LeftButton) {
+            m_analysisPointerDown = analysisService()->pointerPress(m_view->toLogical(event->pos()));
+        }
+        event->accept();
+        return;
+    }
+
     PointF logicPos = m_view->toLogical(event->pos());
     Qt::MouseButton button = event->button();
 
@@ -1073,6 +1088,11 @@ bool NotationViewInputController::tryPercussionShortcut(QKeyEvent* event)
 
 void NotationViewInputController::mouseMoveEvent(QMouseEvent* event)
 {
+    if (m_analysisPointerDown) {
+        analysisService()->pointerMove(m_view->toLogical(event->pos()));
+        return;
+    }
+
     if (m_mouseDownInfo.dragAction == MouseDownInfo::Nothing) {
         return;
     }
@@ -1217,6 +1237,14 @@ void NotationViewInputController::startDragElements(ElementType elementsType, co
 
 void NotationViewInputController::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (m_analysisPointerDown) {
+        m_analysisPointerDown = false;
+        if (analysisService()) {
+            analysisService()->pointerRelease(m_view->toLogical(event->pos()));
+        }
+        return;
+    }
+
     if (m_mouseDownInfo.dragAction == MouseDownInfo::Nothing) {
         return;
     }
@@ -1333,6 +1361,10 @@ void NotationViewInputController::handleLeftClickRelease(const QPointF& releaseP
 
 void NotationViewInputController::mouseDoubleClickEvent(QMouseEvent* event)
 {
+    if (isAnalysisActive()) {
+        return; // not an edit of the score
+    }
+
     if (m_view->isNoteEnterMode()) {
         return;
     }
@@ -1487,6 +1519,11 @@ bool NotationViewInputController::shortcutOverrideEvent(QKeyEvent* event)
 
 void NotationViewInputController::keyPressEvent(QKeyEvent* event)
 {
+    if (isAnalysisActive() && analysisService()->keyPress(event->key(), event->modifiers())) {
+        event->accept();
+        return;
+    }
+
     auto key = event->key();
 
     if (startTextEditingAllowed() && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
@@ -1886,6 +1923,11 @@ void NotationViewInputController::setTouchInput(bool touchInput)
 
 bool NotationViewInputController::isTouchDragTarget(const QPointF& viewPos) const
 {
+    // Analysis: one finger draws (two fingers still move and zoom the score)
+    if (isAnalysisActive()) {
+        return true;
+    }
+
     INotationInteractionPtr interaction = viewInteraction();
     if (!interaction) {
         return false;

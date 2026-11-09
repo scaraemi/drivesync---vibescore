@@ -265,6 +265,7 @@
 
 #ifdef MUE_APP_HAS_DRIVE
 #include "drive/drivemodule.h"
+#include "analysis/analysismodule.h"
 #endif
 #ifdef MUE_CONFIGURATION_IS_APPMOBILE
 #include "mobile/mobilemodule.h"
@@ -429,6 +430,7 @@ std::shared_ptr<muse::IApplication> AppFactory::newGuiApp(const CmdOptions& opti
 #endif
 #ifdef MUE_APP_HAS_DRIVE
     app->addModule(new mu::drive::DriveModule());
+    app->addModule(new mu::analysis::AnalysisModule());
 #endif
 
     return app;

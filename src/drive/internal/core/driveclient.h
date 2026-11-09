@@ -46,6 +46,10 @@ public:
     void updateContent(const QString& fileId, const QString& localPath, FileCallback callback);
     void createFolder(const QString& parentId, const QString& name, FileCallback callback);
     void trash(const QString& fileId, FileCallback callback);
+
+    //! The signed-in Google account: { displayName, emailAddress }
+    using AboutCallback = std::function<void (Result<QPair<QString, QString> >)>;
+    void about(AboutCallback callback);
     //! Renames (newName not empty) and/or moves (fromParentId -> toParentId, both set) a file or folder
     void moveRename(const QString& fileId, const QString& newName, const QString& fromParentId, const QString& toParentId,
                     FileCallback callback);

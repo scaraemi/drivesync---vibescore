@@ -105,6 +105,7 @@ endif()
 # Not in the web app: the sign-in needs a loopback server
 if (NOT OS_IS_WASM AND (MUE_CONFIGURATION_IS_APPMOBILE OR MUSESCORE_BUILD_CONFIGURATION MATCHES "^app(-portable)?$"))
     add_subdirectory(drive)
+    add_subdirectory(analysis)
 endif()
 
 # App (main)

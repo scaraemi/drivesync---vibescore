@@ -226,6 +226,15 @@ FocusScope {
                         notationViewRect: Qt.rect(notationView.x, notationView.y, notationView.width, notationView.height)
                         notationViewMatrix: notationView.matrix
                     }
+
+                    // Analysis: write and draw over the score
+                    AnalysisOverlay {
+                        anchors.fill: parent
+                        visible: !root.publishMode
+
+                        navigationSection: navSec
+                        navigationOrder: popUpLoader.navigationOrderEnd + 1
+                    }
                 }
 
                 onPinchToZoom: function(scale, pos) {

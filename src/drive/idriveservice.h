@@ -114,6 +114,14 @@ public:
     //! Into another folder ("" = the Drive folder itself)
     virtual void move(const QString& relPath, const QString& targetFolderRelPath) = 0;
 
+    //! The signed-in Google account (empty until known)
+    virtual QString accountName() const = 0;
+    virtual QString accountEmail() const = 0;
+    virtual muse::async::Notification accountChanged() const = 0;
+
+    //! Files that go with a score in the folder (the analysis layers: "<score>.<author>.vsanalysis")
+    static bool isCompanionFile(const QString& relPath) { return relPath.endsWith(QStringLiteral(".vsanalysis")); }
+
     //! The app's logs and crash reports: shared (Android) or shown in the file browser (desktop)
     virtual void shareDiagnostics() = 0;
     //! Looks for a newer release of this build on GitHub; userAsked: also says when there is none

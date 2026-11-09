@@ -917,6 +917,11 @@ void AbstractNotationPaintView::paint(QPainter* qp)
     m_loopInMarker->paint(painter);
     m_loopOutMarker->paint(painter);
 
+    // Analysis: drawings, texts and symbols over the score (only while it is on)
+    if (analysisService() && notation() == globalContext()->currentNotation()) {
+        analysisService()->paint(painter);
+    }
+
     if (notation()->viewMode() == engraving::LayoutMode::LINE) {
         ContinuousPanel::NotationViewContext nvCtx;
         nvCtx.xOffset = m_matrix.dx();
@@ -933,6 +938,12 @@ void AbstractNotationPaintView::paint(QPainter* qp)
 void AbstractNotationPaintView::onNotationSetup()
 {
     TRACEFUNC;
+    if (analysisService()) {
+        analysisService()->repaintRequested().onNotify(this, [this]() {
+            update();
+        });
+    }
+
     onCurrentNotationChanged();
     onPlayingChanged();
 

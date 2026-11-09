@@ -98,6 +98,11 @@ static QString deviceLabel()
 #endif
 }
 
+static QString scoreBaseOf(const QString& scoreRelPath)
+{
+    return scoreRelPath.endsWith(QStringLiteral(".mscz"), Qt::CaseInsensitive) ? scoreRelPath.chopped(5) : scoreRelPath;
+}
+
 static QString humanLockReason(const QString& reason)
 {
     return reason.left(reason.indexOf(" [vs:")).trimmed();
@@ -135,6 +140,7 @@ void DriveService::init()
         interactive()->openUrl(url);
     });
     connect(m_auth, &drivesync::GoogleAuth::signedIn, this, [this]() {
+        loadAccount();
         updateState();
         scheduleSync(0);
     });
@@ -170,6 +176,12 @@ void DriveService::init()
     });
 
     initExtras();
+
+    m_accountName = QSettings().value("drive/accountName").toString();
+    m_accountEmail = QSettings().value("drive/accountEmail").toString();
+    if (m_auth->isSignedIn()) {
+        loadAccount();
+    }
 
     loadCatalog();
     onCurrentProjectChanged();
@@ -270,6 +282,11 @@ void DriveService::cancelSignIn()
 void DriveService::signOut()
 {
     m_auth->signOut();
+    m_accountName.clear();
+    m_accountEmail.clear();
+    QSettings().remove("drive/accountName");
+    QSettings().remove("drive/accountEmail");
+    m_accountChanged.notify();
     updateState();
 }
 
@@ -367,10 +384,13 @@ void DriveService::sync()
     config.localRoot = rootPath().toQString();
     config.remoteRootId = folderId();
     config.deviceLabel = deviceLabel();
-    config.includePatterns = { QStringLiteral("*.mscz") };
+    config.includePatterns = { QStringLiteral("*.mscz"), QStringLiteral("*.vsanalysis") };
     config.isOpenInApp = [this](const QString& relPath) { return isOpenInApp(relPath); };
     config.onDemand = true;
-    config.wanted = [this](const QString& relPath) { return m_wanted.contains(relPath); };
+    // On demand, but the analysis layers of the scores on this device always come with them
+    config.wanted = [this](const QString& relPath) {
+        return m_wanted.contains(relPath) || (isCompanionFile(relPath) && isScoreOnDevice(relPath));
+    };
     config.canLiftLock = [this](const drivesync::DriveFile& file) { return isOwnLock(file); };
 
     m_engine = new drivesync::SyncEngine(m_client, config, this);
@@ -648,8 +668,11 @@ void DriveService::openScore(const QString& relPath)
         return;
     }
 
-    // On demand: downloaded by the next run, then opened
+    // On demand: downloaded by the next run, with its analysis layers, then opened
     m_wanted.insert(relPath);
+    for (const QString& companion : companionsOf(relPath)) {
+        m_wanted.insert(companion);
+    }
     m_openAfterSync = relPath;
     m_status.fetching = relPath;
     updateState();
@@ -684,6 +707,12 @@ Ret DriveService::removeFromDevice(const QString& relPath)
 
     QString error;
     const bool ok = drivesync::SyncEngine::removeFromDevice(rootPath().toQString(), relPath, &error);
+    if (ok) {
+        // Its analysis layers go too (those with changes not on Drive yet stay)
+        for (const QString& companion : companionsOf(relPath)) {
+            drivesync::SyncEngine::removeFromDevice(rootPath().toQString(), companion);
+        }
+    }
     m_syncLock->release();
     if (!ok) {
         if (error.contains("not on Drive yet")) {
@@ -726,6 +755,17 @@ void DriveService::deleteFromDrive(const QString& relPath)
         // Off the device too, unless it has changes made here (those would go back to Drive as a new score)
         if (!isOpenInApp(relPath)) {
             drivesync::SyncEngine::removeFromDevice(rootPath().toQString(), relPath);
+        }
+        // Its analysis layers go with it
+        for (const QString& companion : companionsOf(relPath)) {
+            const QString companionId = fileIdOf(companion);
+            if (!companionId.isEmpty()) {
+                m_client->trash(companionId, [](drivesync::Result<drivesync::DriveFile>) {});
+            }
+            drivesync::SyncEngine::removeFromDevice(rootPath().toQString(), companion);
+            QFile::remove(absPath(companion));
+            m_items.remove(companion);
+            m_fileIds.remove(companion);
         }
         m_items.remove(relPath);
         m_fileIds.remove(relPath);
@@ -1200,6 +1240,24 @@ void DriveService::move(const QString& relPath, const QString& targetFolderRelPa
 void DriveService::relocate(const QString& relPath, const QString& newRelPath, const QString& newName,
                             const QString& fromParentId, const QString& toParentId)
 {
+    // A score takes its analysis layers along: "<old name>.<author>.vsanalysis" -> "<new name>.<author>.vsanalysis"
+    const auto item = m_items.constFind(relPath);
+    if (item != m_items.cend() && !item->isFolder && !isCompanionFile(relPath)) {
+        const QString oldBase = scoreBaseOf(relPath);
+        const QString newBase = scoreBaseOf(newRelPath);
+        for (const QString& companion : companionsOf(relPath)) {
+            const QString suffix = companion.mid(oldBase.size());
+            const QString newCompanion = newBase + suffix;
+            const QString companionName = newName.isEmpty() ? QString() : newCompanion.mid(newCompanion.lastIndexOf('/') + 1);
+            relocateOne(companion, newCompanion, companionName, fromParentId, toParentId);
+        }
+    }
+    relocateOne(relPath, newRelPath, newName, fromParentId, toParentId);
+}
+
+void DriveService::relocateOne(const QString& relPath, const QString& newRelPath, const QString& newName,
+                               const QString& fromParentId, const QString& toParentId)
+{
     const QString fileId = fileIdOf(relPath);
 
     auto followLocally = [this, relPath, newRelPath]() {
@@ -1256,4 +1314,66 @@ void DriveService::moveItems(const QString& fromRelPath, const QString& toRelPat
     m_fileIds = ids;
     saveCatalog();
     m_itemsChanged.notify();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Account, analysis layers
+
+void DriveService::loadAccount()
+{
+    m_client->about([this](drivesync::Result<QPair<QString, QString> > result) {
+        if (!result.ok()) {
+            return;
+        }
+        m_accountName = result.value->first;
+        m_accountEmail = result.value->second;
+        QSettings().setValue("drive/accountName", m_accountName);
+        QSettings().setValue("drive/accountEmail", m_accountEmail);
+        m_accountChanged.notify();
+    });
+}
+
+QString DriveService::accountName() const
+{
+    return m_accountName;
+}
+
+QString DriveService::accountEmail() const
+{
+    return m_accountEmail;
+}
+
+async::Notification DriveService::accountChanged() const
+{
+    return m_accountChanged;
+}
+
+QStringList DriveService::companionsOf(const QString& scoreRelPath) const
+{
+    // "<dir>/<name>.mscz" -> "<dir>/<name>.<author>.vsanalysis"
+    const QString base = scoreBaseOf(scoreRelPath) + '.';
+    QStringList result;
+    for (auto it = m_items.cbegin(); it != m_items.cend(); ++it) {
+        const QString& path = it.key();
+        if (isCompanionFile(path) && path.startsWith(base) && !path.mid(base.size()).contains('/')
+            && path.mid(base.size()).count('.') == 1) {
+            result << path;
+        }
+    }
+    const QFileInfo score(absPath(scoreRelPath));
+    for (const QFileInfo& f : QDir(score.absolutePath()).entryInfoList({ score.completeBaseName() + ".*.vsanalysis" }, QDir::Files)) {
+        const QString rel = relPathOf(f.absoluteFilePath());
+        if (!rel.isEmpty() && !result.contains(rel)) {
+            result << rel;
+        }
+    }
+    return result;
+}
+
+bool DriveService::isScoreOnDevice(const QString& companionRelPath) const
+{
+    // "<name>.<author>.vsanalysis" -> "<name>.mscz"
+    QString base = companionRelPath.chopped(QStringLiteral(".vsanalysis").size());
+    base = base.left(base.lastIndexOf('.'));
+    return QFileInfo::exists(absPath(base + QStringLiteral(".mscz")));
 }
