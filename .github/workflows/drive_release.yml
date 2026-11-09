@@ -43,6 +43,8 @@ jobs:
     uses: ./.github/workflows/build_macos.yml
     with:
       build_mode: 'devel'
+      # GitHub is often short of Apple silicon machines; the app is universal either way
+      runner: 'macos-15-intel'
     secrets: inherit
 
   release:
