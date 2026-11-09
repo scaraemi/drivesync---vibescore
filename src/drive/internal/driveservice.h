@@ -188,6 +188,10 @@ private:
 
     OpenScore m_open;
 
+    QTimer m_updateTimer;
+    QString m_updateDismissed;             // "Later" for this release, while the app runs
+    bool m_updatePromptOpen = false;
+
     QString m_accountName;
     QString m_accountEmail;
     muse::async::Notification m_accountChanged;

@@ -40,6 +40,8 @@
 #include <QtCore/qnativeinterface.h>
 #endif
 
+#include <QGuiApplication>
+
 #include "crashhandler.h"
 
 #include "translation.h"
@@ -60,12 +62,13 @@ using namespace muse;
 #endif
 
 static const QString CRASH_SEEN_KEY = QStringLiteral("drive/crashReportsSeenUntil");
-static const QString UPDATE_SKIPPED_KEY = QStringLiteral("drive/updateSkipped");
 static const QString UPDATE_CHECKED_KEY = QStringLiteral("drive/updateCheckedAt");
 
 static constexpr int CRASH_OFFER_DELAY_MS = 4000;
-static constexpr int UPDATE_CHECK_DELAY_MS = 15000;
-static constexpr int UPDATE_CHECK_EVERY_SECS = 24 * 60 * 60;
+// At every start (after the crash report offer), when the app comes back to the foreground and while it runs
+static constexpr int UPDATE_CHECK_DELAY_MS = 8000;
+static constexpr int UPDATE_RECHECK_SECS = 60 * 60;
+static constexpr int UPDATE_TIMER_MS = 2 * 60 * 60 * 1000;
 
 QString DriveService::logsPath() const
 {
@@ -78,12 +81,23 @@ void DriveService::initExtras()
 
     QTimer::singleShot(CRASH_OFFER_DELAY_MS, this, [this]() { offerCrashReport(); });
 
-    QTimer::singleShot(UPDATE_CHECK_DELAY_MS, this, [this]() {
-        const qint64 last = QSettings().value(UPDATE_CHECKED_KEY).toLongLong();
-        if (QDateTime::currentSecsSinceEpoch() - last >= UPDATE_CHECK_EVERY_SECS) {
-            checkForUpdates(false);
-        }
-    });
+    QTimer::singleShot(UPDATE_CHECK_DELAY_MS, this, [this]() { checkForUpdates(false); });
+
+    m_updateTimer.setInterval(UPDATE_TIMER_MS);
+    connect(&m_updateTimer, &QTimer::timeout, this, [this]() { checkForUpdates(false); });
+    m_updateTimer.start();
+
+    if (qGuiApp) {
+        connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+            if (state != Qt::ApplicationActive) {
+                return;
+            }
+            const qint64 last = QSettings().value(UPDATE_CHECKED_KEY).toLongLong();
+            if (QDateTime::currentSecsSinceEpoch() - last >= UPDATE_RECHECK_SECS) {
+                QTimer::singleShot(2000, this, [this]() { checkForUpdates(false); });
+            }
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -210,7 +224,8 @@ void DriveService::checkForUpdates(bool userAsked)
             return;
         }
 
-        if (!userAsked && QSettings().value(UPDATE_SKIPPED_KEY).toString() == tag) {
+        // "Later": not again while the app runs (it is offered again at the next start)
+        if (!userAsked && (m_updatePromptOpen || m_updateDismissed == tag)) {
             return;
         }
 
@@ -242,13 +257,15 @@ void DriveService::checkForUpdates(bool userAsked)
         const QString text = muse::qtrc("drive", "A new version from %1 is available. Download it? Then open the "
                                                  "downloaded file to install it over this one.")
                              .arg(QLocale().toString(published.toLocalTime().date(), QLocale::ShortFormat));
+        m_updatePromptOpen = true;
         interactive()->question(muse::trc("drive", "Update available"), IInteractive::Text(text.toStdString()),
                                 { later, get }, get.btn)
         .onResolve(this, [this, tag, download, getBtn = get.btn](const IInteractive::Result& result) {
+            m_updatePromptOpen = false;
             if (result.isButton(getBtn)) {
                 interactive()->openUrl(QUrl(download));
             } else {
-                QSettings().setValue(UPDATE_SKIPPED_KEY, tag);
+                m_updateDismissed = tag;
             }
         });
     });
