@@ -556,12 +556,42 @@ StyledListView {
             width: ListView.view.width
 
             Drag.active: paletteTree.paletteProvider.isPaletteDragEnabled && paletteHeaderDragArea.drag.active
-            Drag.dragType: Drag.Automatic
+            // A system drag needs a window for the dragged image: on Android it aborts the app (an OpenGL
+            // context for that window cannot be made current). There the header is dragged inside the window.
+            Drag.dragType: ui.isSystemDragSupported ? Drag.Automatic : Drag.Internal
             Drag.supportedActions: Qt.MoveAction
             Drag.proposedAction: Qt.MoveAction
             Drag.mimeData: { "application/musescore/palettetree": "" } // for keys filtering. TODO: make more reasonable MIME data?
 
             Drag.onDragStarted: {
+                beginDragState()
+            }
+
+            // Without system drag the drag signals do not come: started and finished by the header's MouseArea
+            property bool touchDragging: false
+
+            Connections {
+                target: paletteHeaderDragArea.drag
+                enabled: !ui.isSystemDragSupported
+
+                function onActiveChanged() {
+                    if (paletteHeaderDragArea.drag.active && paletteTree.paletteProvider.isPaletteDragEnabled
+                            && !control.touchDragging) {
+                        control.touchDragging = true
+                        control.beginDragState()
+                    }
+                }
+            }
+
+            function endTouchDrag(dropAction) {
+                if (!touchDragging) {
+                    return
+                }
+                touchDragging = false
+                Qt.callLater(finishDrag, dropAction)
+            }
+
+            function beginDragState() {
                 if (popupExpanded) {
                     togglePopup();
                 }
@@ -687,6 +717,14 @@ StyledListView {
                         drag.target: this // TODO or control or paletteHeader?
 
                         drag.axis: Drag.YAxis
+
+                        onReleased: {
+                            control.endTouchDrag(Qt.MoveAction)
+                        }
+
+                        onCanceled: {
+                            control.endTouchDrag(Qt.IgnoreAction)
+                        }
 
                         onPressed: function(mouse) {
                             control.grabToImage(function(result) {

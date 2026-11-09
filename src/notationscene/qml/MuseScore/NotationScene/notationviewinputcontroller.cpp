@@ -792,6 +792,11 @@ bool NotationViewInputController::mousePress_considerGrip(const ClickContext& ct
 
 bool NotationViewInputController::mousePress_considerDragOutgoingElement(const ClickContext& ctx)
 {
+    // Dragging out of the score is a system drag (QDrag): without it (Android) it aborts the app
+    if (!uiConfiguration()->isSystemDragSupported()) {
+        return false;
+    }
+
     if (ctx.event->button() != Qt::LeftButton
         || ctx.event->modifiers() != (Qt::ShiftModifier | Qt::ControlModifier)) {
         return false;
@@ -957,6 +962,11 @@ void NotationViewInputController::cycleOverlappingHitElements(const std::vector<
 
 bool NotationViewInputController::mousePress_considerDragOutgoingRange(const ClickContext& ctx)
 {
+    // Dragging out of the score is a system drag (QDrag): without it (Android) it aborts the app
+    if (!uiConfiguration()->isSystemDragSupported()) {
+        return false;
+    }
+
     if (ctx.event->button() != Qt::LeftButton) {
         return false;
     }
