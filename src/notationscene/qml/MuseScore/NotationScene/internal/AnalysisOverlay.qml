@@ -31,6 +31,12 @@ Item {
     property NavigationSection navigationSection: null
     property int navigationOrder: 0
 
+    function closeTextBox() {
+        focusTextTimer.stop()
+        textBox.visible = false
+        Qt.inputMethod.hide()
+    }
+
     AnalysisToolbarModel {
         id: model
 
@@ -40,7 +46,8 @@ Item {
             textBox.text = ""
             textBox.visible = true
             textField.currentText = ""
-            textField.forceActiveFocus()
+            // After the tap on the score is over: the score view takes the focus back on the press and release
+            focusTextTimer.restart()
         }
     }
 
@@ -304,7 +311,7 @@ Item {
 
                 onAccepted: {
                     model.addText(textBox.text)
-                    textBox.visible = false
+                    root.closeTextBox()
                 }
             }
 
@@ -318,7 +325,7 @@ Item {
 
                 onClicked: {
                     model.addText(textBox.text)
-                    textBox.visible = false
+                    root.closeTextBox()
                 }
             }
 
@@ -328,8 +335,22 @@ Item {
                 navigation.panel: navPanel
                 navigation.column: 32
 
-                onClicked: textBox.visible = false
+                onClicked: root.closeTextBox()
             }
+        }
+    }
+
+    //! The focus to the text field, and the on-screen keyboard (touch screens show it only when asked)
+    Timer {
+        id: focusTextTimer
+        interval: 250
+        repeat: false
+        onTriggered: {
+            if (!textBox.visible) {
+                return
+            }
+            textField.ensureActiveFocus()
+            Qt.inputMethod.show()
         }
     }
 
@@ -337,8 +358,8 @@ Item {
         target: model
 
         function onStateChanged() {
-            if (!model.isActive) {
-                textBox.visible = false
+            if (!model.isActive && textBox.visible) {
+                root.closeTextBox()
             }
         }
     }
