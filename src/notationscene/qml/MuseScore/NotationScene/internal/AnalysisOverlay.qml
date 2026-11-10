@@ -66,13 +66,14 @@ Item {
         id: toggleButton
 
         anchors.top: parent.top
-        anchors.topMargin: 8
+        anchors.topMargin: root.width < 600 ? 4 : 8
         anchors.right: parent.right
-        anchors.rightMargin: 12
+        anchors.rightMargin: root.width < 600 ? 4 : 12
 
         visible: model.isAvailable
         icon: IconCode.EDIT
-        text: model.isActive ? qsTrc("notation", "Analysis on") : qsTrc("notation", "Analysis")
+        // Narrow screens (phones): only the icon, to cover less of the score
+        text: root.width < 600 ? "" : (model.isActive ? qsTrc("notation", "Analysis on") : qsTrc("notation", "Analysis"))
         orientation: Qt.Horizontal
         accentButton: model.isActive
         toolTipTitle: qsTrc("notation", "Analysis: write and draw over the score")

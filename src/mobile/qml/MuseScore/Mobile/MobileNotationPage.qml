@@ -19,6 +19,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Window
 
 import Muse.Ui
 import Muse.UiComponents
@@ -52,6 +53,33 @@ Item {
 
     //! While text on the score is edited: the bar over the keyboard
     readonly property bool isEditingText: root.shell ? root.shell.isEditingText : false
+
+    //! Phones: the score takes the whole screen (no system bars) while the page is shown; the system bars come
+    //! back when the keyboard is needed, so that Android keeps the text being written above the keyboard
+    readonly property bool wantsFullScreen: root.isPhone && root.visible && !root.isEditingText && !Qt.inputMethod.visible
+    property int visibilityBeforeFullScreen: -1
+
+    onWantsFullScreenChanged: Qt.callLater(root.applyFullScreen)
+
+    function applyFullScreen() {
+        const win = root.Window.window
+        if (!win) {
+            return
+        }
+        if (root.wantsFullScreen) {
+            if (win.visibility !== Window.FullScreen) {
+                root.visibilityBeforeFullScreen = win.visibility
+                win.visibility = Window.FullScreen
+            }
+        } else if (root.visibilityBeforeFullScreen >= 0) {
+            win.visibility = root.visibilityBeforeFullScreen
+            root.visibilityBeforeFullScreen = -1
+        }
+    }
+
+    //! Phones: less height for the bars over the score
+    readonly property int topBarHeight: root.isPhone ? 44 : 52
+    readonly property int noteInputBarHeight: root.isPhone ? 44 : 48
 
     //! The part of the page under the keyboard. Android makes the window smaller when the keyboard comes
     //! (adjustResize: nothing under it); on iOS the keyboard covers the window.
@@ -122,6 +150,11 @@ Item {
 
     Component.onDestruction: {
         touchModifiersModel.clear()
+
+        const win = root.Window.window
+        if (win && root.visibilityBeforeFullScreen >= 0) {
+            win.visibility = root.visibilityBeforeFullScreen
+        }
     }
 
     //! Back key (see MobileShell.qml)
@@ -156,6 +189,7 @@ Item {
 
         appMenuModel.load()
         Qt.callLater(pageModel.init)
+        Qt.callLater(root.applyFullScreen)
     }
 
     NavigationSection {
@@ -190,8 +224,12 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        // Full screen: not under a camera cutout
+        anchors.topMargin: root.SafeArea.margins.top
+        anchors.leftMargin: root.SafeArea.margins.left
+        anchors.rightMargin: root.SafeArea.margins.right
 
-        height: 52
+        height: root.topBarHeight
 
         color: ui.theme.backgroundSecondaryColor
 
@@ -375,7 +413,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
 
-        height: visible ? 48 : 0
+        height: visible ? root.noteInputBarHeight : 0
         visible: root.isOpen(pageModel.noteInputBarName())
 
         color: ui.theme.backgroundPrimaryColor
