@@ -81,7 +81,6 @@ FocusScope {
 
     //! Touch screens: the field takes the focus by itself (activeFocusOnPress is off), so the on-screen keyboard
     //! must be asked for (also when the field already has the focus and the keyboard was closed)
-    readonly property bool isTouchPlatform: Qt.platform.os === "android" || Qt.platform.os === "ios"
 
     function showSoftwareKeyboard() {
         if (!root.isTouchPlatform || valueInput.readOnly) {
