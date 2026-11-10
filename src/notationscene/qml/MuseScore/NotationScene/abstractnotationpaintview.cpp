@@ -24,6 +24,7 @@
 #include <QCursor>
 #include <QGuiApplication>
 #include <QInputMethod>
+#include <QTimer>
 #include <QMatrix4x4>
 #include <QSGTransformNode>
 #include <QPainter>
@@ -355,9 +356,10 @@ void AbstractNotationPaintView::onLoadNotation(INotationPtr)
         setFocus(false); // Remove focus once so that the IME reloads the state
         forceFocusIn();
 
-        // Touch screens: the software keyboard (it does not show up when a hardware keyboard is used)
+        // Touch screens: the software keyboard (it does not show up when a hardware keyboard is used). Asked for once
+        // the focus has moved here and the tap that started the editing is over, and again if it did not come up.
         if (m_touchController) {
-            QGuiApplication::inputMethod()->show();
+            showSoftwareKeyboardSoon();
         }
     });
 
@@ -1554,6 +1556,11 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
 {
     if (isInited()) {
         m_inputController->mouseReleaseEvent(event);
+
+        // A tap in the text being edited brings the keyboard back if it was closed
+        if (m_touchController && notation() && notation()->interaction()->isTextEditingStarted()) {
+            showSoftwareKeyboardSoon();
+        }
     }
 }
 
@@ -1647,6 +1654,26 @@ void AbstractNotationPaintView::inputMethodEvent(QInputMethodEvent* event)
 int AbstractNotationPaintView::inputMethodHints() const
 {
     return inputMethodQuery(Qt::ImHints).toInt();
+}
+
+void AbstractNotationPaintView::showSoftwareKeyboardSoon()
+{
+    for (int delayMs : { 100, 400 }) {
+        QTimer::singleShot(delayMs, this, [this]() {
+            const INotationInteractionPtr interaction = isInited() ? notation()->interaction() : nullptr;
+            if (!interaction || !interaction->isTextEditingStarted()) {
+                return;
+            }
+            if (!hasActiveFocus()) {
+                forceFocusIn();
+            }
+            QInputMethod* inputMethod = QGuiApplication::inputMethod();
+            if (!inputMethod->isVisible()) {
+                inputMethod->update(Qt::ImQueryAll);
+                inputMethod->show();
+            }
+        });
+    }
 }
 
 QVariant AbstractNotationPaintView::inputMethodQuery(Qt::InputMethodQuery query) const

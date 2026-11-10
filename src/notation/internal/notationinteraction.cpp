@@ -115,6 +115,73 @@ using namespace muse;
 using namespace muse::draw;
 using namespace muse::io;
 
+namespace {
+//! Mobile systems keep only text (and URLs) on their clipboard: what is copied from a score (staves, symbols,
+//! rich text) is lost there. The app keeps its own copy, and uses it as long as nothing else was copied since.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+struct AppClipboard {
+    std::unique_ptr<QMimeData> data;
+    QString systemText;  // what the system clipboard had right after our copy
+    bool connected = false;
+    bool settingOwn = false;
+};
+
+AppClipboard& appClipboard()
+{
+    static AppClipboard clipboard;
+    return clipboard;
+}
+
+QMimeData* copyMimeData(const QMimeData* source)
+{
+    QMimeData* copy = new QMimeData();
+    for (const QString& format : source->formats()) {
+        copy->setData(format, source->data(format));
+    }
+    if (source->hasText()) {
+        copy->setText(source->text());
+    }
+    return copy;
+}
+#endif
+
+void setClipboardMimeData(QMimeData* mimeData)
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    AppClipboard& own = appClipboard();
+    QClipboard* clipboard = QGuiApplication::clipboard();
+    if (!own.connected) {
+        own.connected = true;
+        QObject::connect(clipboard, &QClipboard::dataChanged, clipboard, []() {
+            AppClipboard& c = appClipboard();
+            if (!c.settingOwn && c.data && QGuiApplication::clipboard()->text() != c.systemText) {
+                c.data.reset(); // something else was copied
+            }
+        });
+    }
+
+    own.data.reset(copyMimeData(mimeData));
+    own.settingOwn = true;
+    clipboard->setMimeData(mimeData);
+    own.settingOwn = false;
+    own.systemText = clipboard->text();
+#else
+    setClipboardMimeData(mimeData);
+#endif
+}
+
+const QMimeData* clipboardMimeData()
+{
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    const AppClipboard& own = appClipboard();
+    if (own.data && QGuiApplication::clipboard()->text() == own.systemText) {
+        return own.data.get();
+    }
+#endif
+    return QGuiApplication::clipboard()->mimeData();
+}
+}
+
 static mu::engraving::KeyboardModifier keyboardModifier(Qt::KeyboardModifiers km)
 {
     return mu::engraving::KeyboardModifier(int(km));
@@ -5285,14 +5352,14 @@ void NotationInteraction::copySelection()
             QMimeData* mimeData = new QMimeData();
             mimeData->setData(TextEditData::mimeRichTextFormat, ted->selectedText.toQString().toUtf8());
             mimeData->setText(ted->selectedPlainText);
-            QGuiApplication::clipboard()->setMimeData(mimeData);
+            setClipboardMimeData(mimeData);
         }
     } else {
         QMimeData* mimeData = selection()->qMimeData();
         if (!mimeData) {
             return;
         }
-        QApplication::clipboard()->setMimeData(mimeData);
+        setClipboardMimeData(mimeData);
     }
 }
 
@@ -5414,7 +5481,7 @@ void NotationInteraction::pasteSelection(const Fraction& scale)
     if (isTextEditingStarted()) {
         pasteIntoTextEdit();
     } else {
-        const QMimeData* mimeData = QApplication::clipboard()->mimeData();
+        const QMimeData* mimeData = clipboardMimeData();
         QMimeDataAdapter ma(mimeData);
         succeeded = score()->cmdPaste(&ma, nullptr, scale);
         m_editData.element = nullptr;
@@ -5434,7 +5501,7 @@ void NotationInteraction::pasteSelection(const Fraction& scale)
 
 void NotationInteraction::pasteIntoTextEdit()
 {
-    const QMimeData* mimeData = QApplication::clipboard()->mimeData();
+    const QMimeData* mimeData = clipboardMimeData();
     if (mimeData->hasFormat(TextEditData::mimeRichTextFormat)) {
         const QString txt = QString::fromUtf8(mimeData->data(TextEditData::mimeRichTextFormat));
         toTextBase(m_editData.element)->paste(m_editData, txt);
@@ -5481,7 +5548,7 @@ void NotationInteraction::swapSelection()
     // Save old selection to clipboard...
     QMimeData* mimeData = new QMimeData();
     mimeData->setData(selection.mimeType(), oldSelection);
-    QApplication::clipboard()->setMimeData(mimeData);
+    setClipboardMimeData(mimeData);
 }
 
 void NotationInteraction::deleteSelection()

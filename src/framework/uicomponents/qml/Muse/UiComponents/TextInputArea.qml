@@ -61,6 +61,27 @@ FocusScope {
         valueInput.selectAll()
     }
 
+    //! Touch screens: the field takes the focus by itself (activeFocusOnPress is off), so the on-screen keyboard
+    //! must be asked for (also when the field already has the focus and the keyboard was closed)
+    readonly property bool isTouchPlatform: Qt.platform.os === "android" || Qt.platform.os === "ios"
+
+    function showSoftwareKeyboard() {
+        if (!root.isTouchPlatform || valueInput.readOnly) {
+            return
+        }
+        keyboardTimer.restart()
+    }
+
+    Timer {
+        id: keyboardTimer
+        interval: 50
+        onTriggered: {
+            if (valueInput.activeFocus && !Qt.inputMethod.visible) {
+                Qt.inputMethod.show()
+            }
+        }
+    }
+
     function ensureActiveFocus() {
         if (Window.window && Window.window.objectName.includes("_WindowView_QQuickView")) {
             // See also WindowView::eventFilter
@@ -227,6 +248,7 @@ FocusScope {
                     if (activeFocus) {
                         navCtrl.requestActive()
                         selectAll()
+                        root.showSoftwareKeyboard()
                     } else {
                         deselect()
                         root.textEditingFinished(valueInput.text)
@@ -300,6 +322,9 @@ FocusScope {
         cursorShape: Qt.IBeamCursor
 
         onPressed: function(mouse) {
+            if (valueInput.activeFocus) {
+                root.showSoftwareKeyboard()
+            }
             root.ensureActiveFocus()
             navCtrl.requestActiveByInteraction()
             mouse.accepted = false

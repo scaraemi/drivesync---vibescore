@@ -284,7 +284,9 @@ void DriveService::checkForUpdates(bool userAsked)
             m_updatePromptOpen = false;
             if (result.isButton(getBtn)) {
                 if (installHere) {
-                    downloadAndInstall(tag, QUrl(download), downloadSize);
+                    QTimer::singleShot(0, this, [this, tag, download, downloadSize]() {
+                        downloadAndInstall(tag, QUrl(download), downloadSize);
+                    });
                 } else {
                     interactive()->openUrl(QUrl(download));
                 }
@@ -298,10 +300,46 @@ void DriveService::checkForUpdates(bool userAsked)
     });
 }
 
-// Android: the APK is downloaded here and handed to the system installer (the app asks once to be allowed to)
+// Android: the APK is downloaded here (with a progress dialog that can be canceled) and handed to the system
+// installer; the app asks once to be allowed to install apps. Every problem is shown, and logged.
+#ifdef Q_OS_ANDROID
+static bool canInstallPackages()
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    const bool allowed = QJniObject::callStaticMethod<jboolean>("io/github/m1omg/vibescore/VibeScoreUpdate",
+                                                                "canInstallPackages",
+                                                                "(Landroid/content/Context;)Z", context.object());
+    QJniEnvironment env;
+    env.checkAndClearExceptions();
+    return allowed;
+}
+
+static QString callUpdateHelper(const char* method, const QString& path = QString())
+{
+    const QJniObject context = QNativeInterface::QAndroidApplication::context();
+    QJniObject result;
+    if (path.isEmpty()) {
+        result = QJniObject::callStaticObjectMethod("io/github/m1omg/vibescore/VibeScoreUpdate", method,
+                                                    "(Landroid/content/Context;)Ljava/lang/String;", context.object());
+    } else {
+        const QJniObject jpath = QJniObject::fromString(path);
+        result = QJniObject::callStaticObjectMethod("io/github/m1omg/vibescore/VibeScoreUpdate", method,
+                                                    "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;",
+                                                    context.object(), jpath.object<jstring>());
+    }
+    QJniEnvironment env;
+    if (env.checkAndClearExceptions()) {
+        return QStringLiteral("Java exception in VibeScoreUpdate.%1").arg(method);
+    }
+    return result.isValid() ? result.toString() : QStringLiteral("No result from VibeScoreUpdate.%1").arg(method);
+}
+#endif
+
 void DriveService::downloadAndInstall(const QString& tag, const QUrl& url, qint64 expectedSize)
 {
 #ifdef Q_OS_ANDROID
+    LOGI() << "Update: downloading " << url.toString() << " (" << expectedSize << " bytes)";
+
     const QString dir = globalConfiguration()->userAppDataPath().toQString() + "/updates";
     QDir(dir).removeRecursively();
     QDir().mkpath(dir);
@@ -309,19 +347,36 @@ void DriveService::downloadAndInstall(const QString& tag, const QUrl& url, qint6
 
     auto file = std::make_shared<QFile>(path);
     if (!file->open(QIODevice::WriteOnly)) {
+        LOGE() << "Update: cannot write " << path << ": " << file->errorString();
         interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(file->errorString().toStdString()));
         return;
     }
 
     QNetworkRequest request(url);
     request.setRawHeader("User-Agent", "VibeScore-Drive");
+    request.setRawHeader("Accept", "application/octet-stream");
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply* reply = m_nam->get(request);
     m_updateDownloading = true;
 
-    interactive()->info(muse::trc("drive", "Update"),
-                        IInteractive::Text(muse::trc("drive", "Downloading the update. The installation starts when it is done.")));
+    m_updateProgress = muse::Progress();
+    interactive()->showProgress(muse::trc("drive", "Downloading the update"), m_updateProgress);
+    m_updateProgress.start();
+    m_updateProgress.canceled().onNotify(this, [reply]() {
+        if (reply->isRunning()) {
+            reply->abort();
+        }
+    });
 
+    connect(reply, &QNetworkReply::downloadProgress, this, [this, expectedSize](qint64 received, qint64 total) {
+        const qint64 all = total > 0 ? total : expectedSize;
+        if (all > 0) {
+            //: %1 and %2 are sizes in MB
+            m_updateProgress.progress(received / 1024, all / 1024,
+                                      muse::qtrc("drive", "%1 of %2 MB").arg(received / (1024 * 1024))
+                                      .arg(all / (1024 * 1024)).toStdString());
+        }
+    });
     connect(reply, &QNetworkReply::readyRead, this, [reply, file]() { file->write(reply->readAll()); });
     connect(reply, &QNetworkReply::finished, this, [this, reply, file, path, expectedSize]() {
         reply->deleteLater();
@@ -329,37 +384,34 @@ void DriveService::downloadAndInstall(const QString& tag, const QUrl& url, qint6
         file->write(reply->readAll());
         file->close();
 
+        const bool canceled = reply->error() == QNetworkReply::OperationCanceledError;
+        if (!canceled) {
+            m_updateProgress.finish(muse::make_ok());
+        }
+
         if (reply->error() != QNetworkReply::NoError || (expectedSize > 0 && file->size() != expectedSize)) {
+            LOGE() << "Update: download failed: " << reply->errorString() << ", " << file->size() << " of "
+                   << expectedSize << " bytes";
+            QFile::remove(path);
+            if (canceled) {
+                return;
+            }
             const std::string why = reply->error() != QNetworkReply::NoError
                                     ? reply->errorString().toStdString()
                                     : muse::trc("drive", "The download is incomplete. Try again later.");
-            QFile::remove(path);
-            interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(why));
+            QTimer::singleShot(0, this, [this, why]() {
+                interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(why));
+            });
             return;
         }
 
-        const QJniObject context = QNativeInterface::QAndroidApplication::context();
-        const bool allowed = QJniObject::callStaticMethod<jboolean>("io/github/m1omg/vibescore/VibeScoreUpdate",
-                                                                    "canInstallPackages",
-                                                                    "(Landroid/content/Context;)Z", context.object());
-        QJniEnvironment env;
-        env.checkAndClearExceptions();
-        if (allowed) {
-            installDownloadedUpdate(path);
-            return;
-        }
-
-        // Android lets the user allow it on a system page; the installation starts when they come back
-        m_pendingUpdateApk = path;
-        interactive()->info(muse::trc("drive", "Update"),
-                            IInteractive::Text(muse::trc("drive", "Allow the app to install updates on the next page, "
-                                                                  "then come back here: the installation starts.")))
-        .onResolve(this, [](const IInteractive::Result&) {
-            const QJniObject ctx = QNativeInterface::QAndroidApplication::context();
-            QJniObject::callStaticMethod<void>("io/github/m1omg/vibescore/VibeScoreUpdate", "openInstallSettings",
-                                               "(Landroid/content/Context;)V", ctx.object());
-            QJniEnvironment e;
-            e.checkAndClearExceptions();
+        LOGI() << "Update: downloaded " << path << " (" << file->size() << " bytes)";
+        QTimer::singleShot(300, this, [this, path]() {
+            if (canInstallPackages()) {
+                installDownloadedUpdate(path);
+                return;
+            }
+            askInstallPermission(path);
         });
     });
 #else
@@ -369,17 +421,46 @@ void DriveService::downloadAndInstall(const QString& tag, const QUrl& url, qint6
 #endif
 }
 
+void DriveService::askInstallPermission(const QString& apkPath)
+{
+#ifdef Q_OS_ANDROID
+    LOGI() << "Update: asking for the permission to install apps";
+    IInteractive::ButtonData later(int(IInteractive::Button::CustomButton) + 1, muse::trc("drive", "Later"));
+    later.role = IInteractive::ButtonRole::RejectRole;
+    IInteractive::ButtonData allow(int(IInteractive::Button::CustomButton) + 2, muse::trc("drive", "Allow"), true);
+    allow.role = IInteractive::ButtonRole::AcceptRole;
+
+    interactive()->question(muse::trc("drive", "Update"),
+                            IInteractive::Text(muse::trc("drive", "The update is downloaded. Android asks once to allow "
+                                                                  "the app to install updates: turn it on in the next page, "
+                                                                  "then come back here and the installation starts.")),
+                            { later, allow }, allow.btn)
+    .onResolve(this, [this, apkPath, allowBtn = allow.btn](const IInteractive::Result& result) {
+        if (!result.isButton(allowBtn)) {
+            return;
+        }
+        m_pendingUpdateApk = apkPath;
+        const QString error = callUpdateHelper("openInstallSettings");
+        if (!error.isEmpty()) {
+            LOGE() << "Update: " << error;
+            m_pendingUpdateApk.clear();
+            interactive()->error(muse::trc("drive", "Update"), IInteractive::Text(error.toStdString()));
+        }
+    });
+#else
+    UNUSED(apkPath);
+#endif
+}
+
 void DriveService::installDownloadedUpdate(const QString& apkPath)
 {
 #ifdef Q_OS_ANDROID
-    const QJniObject context = QNativeInterface::QAndroidApplication::context();
-    const QJniObject path = QJniObject::fromString(apkPath);
-    QJniObject::callStaticMethod<void>("io/github/m1omg/vibescore/VibeScoreUpdate", "installApk",
-                                       "(Landroid/content/Context;Ljava/lang/String;)V",
-                                       context.object(), path.object<jstring>());
-    QJniEnvironment env;
-    if (env.checkAndClearExceptions()) {
-        LOGE() << "Failed to start the installation of the update";
+    LOGI() << "Update: starting the installer for " << apkPath;
+    const QString error = callUpdateHelper("installApk", apkPath);
+    if (!error.isEmpty()) {
+        LOGE() << "Update: " << error;
+        interactive()->error(muse::trc("drive", "Update"),
+                             IInteractive::Text(muse::qtrc("drive", "The installation could not start: %1").arg(error).toStdString()));
     }
 #else
     UNUSED(apkPath);
@@ -395,14 +476,18 @@ void DriveService::onAppActiveForUpdate()
     const QString path = m_pendingUpdateApk;
     m_pendingUpdateApk.clear();
 
-    const QJniObject context = QNativeInterface::QAndroidApplication::context();
-    const bool allowed = QJniObject::callStaticMethod<jboolean>("io/github/m1omg/vibescore/VibeScoreUpdate",
-                                                                "canInstallPackages",
-                                                                "(Landroid/content/Context;)Z", context.object());
-    QJniEnvironment env;
-    env.checkAndClearExceptions();
-    if (allowed && QFile::exists(path)) {
+    if (!QFile::exists(path)) {
+        return;
+    }
+    if (canInstallPackages()) {
         QTimer::singleShot(500, this, [this, path]() { installDownloadedUpdate(path); });
+    } else {
+        LOGI() << "Update: the permission to install apps was not given";
+        QTimer::singleShot(500, this, [this]() {
+            interactive()->info(muse::trc("drive", "Update"),
+                                IInteractive::Text(muse::trc("drive", "Without the permission to install apps, the update "
+                                                                      "cannot be installed. It is offered again at the next start.")));
+        });
     }
 #endif
 }

@@ -50,52 +50,51 @@ public class VibeScoreUpdate
         return context.getPackageManager().canRequestPackageInstalls();
     }
 
-    /** The system page where the user allows this app to install apps */
-    public static void openInstallSettings(final Context context)
+    /** The system page where the user allows this app to install apps. Returns an error, or "" */
+    public static String openInstallSettings(Context context)
     {
         if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return;
+            return "";
         }
-        runOnUi(context, () -> {
+        try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                                        Uri.parse("package:" + context.getPackageName()));
             if (!(context instanceof Activity)) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
             context.startActivity(intent);
-        });
+            return "";
+        } catch (Exception e) {
+            Log.e(TAG, "Update: install settings: " + e);
+            return e.toString();
+        }
     }
 
-    public static void installApk(final Context context, final String path)
+    /** Hands the APK to the system installer. Returns an error, or "" */
+    public static String installApk(Context context, String path)
     {
         if (context == null || path == null) {
-            return;
+            return "No context";
         }
-        runOnUi(context, () -> {
-            Uri uri = FileProvider.getUriForFile(context, context.getPackageName() + PROVIDER_SUFFIX, new File(path));
+        try {
+            File file = new File(path);
+            if (!file.isFile()) {
+                return "Missing file: " + path;
+            }
+            Uri uri = FileProvider.getUriForFile(context, context.getPackageName() + PROVIDER_SUFFIX, file);
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(uri, "application/vnd.android.package-archive");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
             if (!(context instanceof Activity)) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
             context.startActivity(intent);
-        });
-    }
-
-    private static void runOnUi(Context context, Runnable action)
-    {
-        Runnable safe = () -> {
-            try {
-                action.run();
-            } catch (Exception e) {
-                Log.e(TAG, "Update: " + e);
-            }
-        };
-        if (context instanceof Activity) {
-            ((Activity) context).runOnUiThread(safe);
-        } else {
-            safe.run();
+            Log.i(TAG, "Update: installer started for " + uri);
+            return "";
+        } catch (Exception e) {
+            Log.e(TAG, "Update: install: " + e);
+            return e.toString();
         }
     }
 }

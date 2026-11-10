@@ -266,6 +266,7 @@ private:
     void inputMethodEvent(QInputMethodEvent* event) override;
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     int inputMethodHints() const;
+    void showSoftwareKeyboardSoon();
 
     bool ensureViewportInsideScrollableArea();
 

@@ -33,6 +33,7 @@
 #include "global/iinteractive.h"
 #include "global/iglobalconfiguration.h"
 #include "global/io/ifilesystem.h"
+#include "global/progress.h"
 #include "project/iprojectconfiguration.h"
 
 #include "../idriveservice.h"
@@ -162,6 +163,7 @@ private:
     void offerCrashReport();
     void downloadAndInstall(const QString& tag, const QUrl& url, qint64 expectedSize);
     void installDownloadedUpdate(const QString& apkPath);
+    void askInstallPermission(const QString& apkPath);
     void onAppActiveForUpdate();
 
     QNetworkAccessManager* m_nam = nullptr;
@@ -196,6 +198,7 @@ private:
     QString m_updateDismissed;             // "Later" for this release, while the app runs
     bool m_updatePromptOpen = false;
     bool m_updateDownloading = false;
+    muse::Progress m_updateProgress;
     QString m_pendingUpdateApk;            // downloaded, waiting for the permission to install
 
     QString m_accountName;
