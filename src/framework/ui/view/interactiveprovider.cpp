@@ -29,6 +29,8 @@
 #include <QGuiApplication>
 #include <QWindow>
 #include <QWidget>
+#include <QPointer>
+#include <QTimer>
 
 #include "global/async/async.h"
 #include "diagnostics/diagnosticutils.h"
@@ -158,7 +160,17 @@ async::Promise<Color> InteractiveProvider::selectColor(const Color& color, const
             (void)resolve(Color::fromQColor(selectedColor));
         });
 
+#ifdef MUSE_CONFIGURATION_IS_MOBILE
+        // Not during the tap that asked for it (see openWidgetDialog)
+        QPointer<QColorDialog> dlgGuard(dlg);
+        QTimer::singleShot(150, dlg, [dlgGuard]() {
+            if (dlgGuard) {
+                dlgGuard->open();
+            }
+        });
+#else
         dlg->open();
+#endif
 
         return async::Promise<Color>::dummy_result();
     }, async::PromiseType::AsyncByBody);
@@ -735,8 +747,17 @@ RetVal<InteractiveProvider::OpenData> InteractiveProvider::openWidgetDialog(cons
     // A single window on a touch screen: the dialog takes the whole window and scrolls when it does not fit
     QWidget* frame = MobileWidgetDialogFrame::wrap(dialog);
     frame->setWindowModality(modal ? Qt::ApplicationModal : Qt::NonModal);
-    frame->showMaximized();
-    frame->activateWindow();
+    // Not right away: the dialog is usually asked for from a tap (a menu item), and Android cannot give the new
+    // window its surface while that tap is still being handled; the app then aborts ("could not create the EGL
+    // surface", seen with Customize kit). Shown once the tap is over.
+    QPointer<QWidget> frameGuard(frame);
+    QTimer::singleShot(150, frame, [frameGuard]() {
+        if (!frameGuard) {
+            return;
+        }
+        frameGuard->showMaximized();
+        frameGuard->activateWindow();
+    });
 #else
     dialog->setWindowModality(modal ? Qt::ApplicationModal : Qt::NonModal);
     dialog->show();
