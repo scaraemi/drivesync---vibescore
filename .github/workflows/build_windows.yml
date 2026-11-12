@@ -227,6 +227,16 @@ jobs:
       run: |
         bash ./buildscripts/ci/tools/checksum.sh
 
+    - name: 'Drive: symbols for the crash reports'
+      shell: bash
+      run: |
+        # The app's crash reports give module + offset: with the .pdb they give the functions
+        PDB=$(find build.release -name 'MuseScore*.pdb' -print -quit)
+        if [ -z "$PDB" ]; then echo "No .pdb"; exit 0; fi
+        EXE=$(find build.install -name "$(basename "$PDB" .pdb).exe" -print -quit)
+        7z a -mx=7 build.artifacts/Drive-symbols-windows-x64.7z "$PDB" $EXE
+        ls -la build.artifacts
+
     - name: Upload debug files
       if: env.DO_UPLOAD_SYMBOLS == 'true'
       shell: bash

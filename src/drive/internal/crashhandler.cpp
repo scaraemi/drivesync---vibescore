@@ -35,6 +35,18 @@
 #include <unwind.h>
 #endif
 
+#ifdef Q_OS_WIN
+#define VS_CRASH_HANDLER_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#endif
+
 using namespace mu::drive;
 
 #ifdef VS_CRASH_HANDLER
@@ -147,6 +159,78 @@ void onCrash(int sig, siginfo_t* info, void* context)
 }
 #endif
 
+
+#ifdef VS_CRASH_HANDLER_WIN
+namespace {
+// Windows: an unhandled exception (access violation…) or abort() (qFatal, failed assertions). The stack is
+// written as module + offset (RVA): with the symbols published with the release (MuseScore-…-symbols.7z, the .pdb)
+// it gives the functions.
+char s_reportPath[1024];
+char s_header[256];
+LPTOP_LEVEL_EXCEPTION_FILTER s_previousFilter = nullptr;
+volatile LONG s_written = 0;
+
+void writeStr(HANDLE file, const char* s)
+{
+    if (s) {
+        DWORD written = 0;
+        WriteFile(file, s, DWORD(strlen(s)), &written, nullptr);
+    }
+}
+
+void writeReport(const char* what, uintptr_t code, uintptr_t address)
+{
+    if (InterlockedExchange(&s_written, 1)) {
+        return; // once
+    }
+    HANDLE file = CreateFileA(s_reportPath, FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    char line[600];
+    writeStr(file, s_header);
+    snprintf(line, sizeof(line), "%s, code 0x%llx, address 0x%llx\nthread %lu\n\nstack (module + offset):\n", what,
+             (unsigned long long)code, (unsigned long long)address, GetCurrentThreadId());
+    writeStr(file, line);
+
+    void* frames[62];
+    const USHORT count = RtlCaptureStackBackTrace(0, 62, frames, nullptr);
+    for (USHORT i = 0; i < count; ++i) {
+        const uintptr_t pc = uintptr_t(frames[i]);
+        HMODULE module = nullptr;
+        char name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCSTR>(frames[i]), &module) && module) {
+            char path[MAX_PATH];
+            if (GetModuleFileNameA(module, path, MAX_PATH)) {
+                const char* base = strrchr(path, '\\');
+                strncpy(name, base ? base + 1 : path, sizeof(name) - 1);
+            }
+            snprintf(line, sizeof(line), "#%u pc 0x%llx  %s\n", unsigned(i), (unsigned long long)(pc - uintptr_t(module)), name);
+        } else {
+            snprintf(line, sizeof(line), "#%u pc 0x%llx\n", unsigned(i), (unsigned long long)pc);
+        }
+        writeStr(file, line);
+    }
+    writeStr(file, "\n");
+    CloseHandle(file);
+}
+
+LONG WINAPI onException(EXCEPTION_POINTERS* info)
+{
+    const EXCEPTION_RECORD* record = info ? info->ExceptionRecord : nullptr;
+    writeReport("exception", record ? record->ExceptionCode : 0, record ? uintptr_t(record->ExceptionAddress) : 0);
+    return s_previousFilter ? s_previousFilter(info) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+void onAbort(int)
+{
+    writeReport("abort (fatal error)", 0, 0);
+}
+}
+#endif
+
 void CrashHandler::install(const QString& logsDir)
 {
 #ifdef VS_CRASH_HANDLER
@@ -170,6 +254,17 @@ void CrashHandler::install(const QString& logsDir)
     for (size_t i = 0; i < sizeof(SIGNALS) / sizeof(SIGNALS[0]); ++i) {
         sigaction(SIGNALS[i], &action, &s_previous[i]);
     }
+#elif defined(VS_CRASH_HANDLER_WIN)
+    QDir().mkpath(logsDir);
+    const QByteArray path = QDir::toNativeSeparators(logsDir + "/crash_" + QDateTime::currentDateTime().toString("yyMMdd_HHmmss")
+                                                     + ".txt").toLocal8Bit();
+    strncpy(s_reportPath, path.constData(), sizeof(s_reportPath) - 1);
+    const QByteArray header = ("Crash report. App started " + QDateTime::currentDateTime().toString(Qt::ISODate)
+                               + ", build " + QStringLiteral(VS_BUILD_ID) + ", Windows\n").toUtf8();
+    strncpy(s_header, header.constData(), sizeof(s_header) - 1);
+
+    s_previousFilter = SetUnhandledExceptionFilter(onException);
+    signal(SIGABRT, onAbort);
 #else
     Q_UNUSED(logsDir)
 #endif

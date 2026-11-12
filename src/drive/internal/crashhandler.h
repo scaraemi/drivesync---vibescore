@@ -23,7 +23,7 @@
 namespace mu::drive {
 //! Writes a crash report (signal, fault address, the stack as library + offset) next to the app's logs when the
 //! app crashes, then lets the system handle the crash as usual. On the next start the app offers to send it.
-//! Android and Linux; elsewhere it does nothing.
+//! Android, Linux and Windows; elsewhere it does nothing.
 class CrashHandler
 {
 public:

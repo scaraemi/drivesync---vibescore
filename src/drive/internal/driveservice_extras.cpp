@@ -248,7 +248,7 @@ void DriveService::checkForUpdates(bool userAsked)
         for (const QString& suffix : suffixes) {
             for (const QJsonValue& asset : release.value("assets").toArray()) {
                 const QString name = asset.toObject().value("name").toString();
-                if (download.isEmpty() && name.endsWith(suffix)) {
+                if (download.isEmpty() && name.endsWith(suffix) && !name.contains("symbols")) {
                     download = asset.toObject().value("browser_download_url").toString();
                     downloadSize = asset.toObject().value("size").toInteger();
                 }
