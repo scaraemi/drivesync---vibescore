@@ -73,6 +73,8 @@ public:
     Q_INVOKABLE QString setFolder(const QString& linkOrId);
     Q_INVOKABLE void syncNow();
     Q_INVOKABLE void copyToDrive(const QString& scorePath);
+    //! Scores of this computer, copied into the folder shown
+    Q_INVOKABLE void addFromComputer();
 
     QString currentFolder() const;
     QString currentFolderName() const;

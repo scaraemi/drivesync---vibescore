@@ -125,6 +125,10 @@ DriveService::~DriveService() = default;
 
 void DriveService::init()
 {
+    if (dispatcher()) {
+        dispatcher()->reg(this, "drive-save-to-drive", this, &DriveService::saveOpenScoreToDrive);
+    }
+
     m_nam = new QNetworkAccessManager(this);
     m_tokenStore = std::make_unique<drivesync::SettingsTokenStore>(REFRESH_TOKEN_KEY);
 
@@ -802,20 +806,24 @@ void DriveService::unlock(const QString& relPath)
     });
 }
 
-RetVal<io::path_t> DriveService::copyToDrive(const io::path_t& scorePath)
+RetVal<io::path_t> DriveService::copyToDrive(const io::path_t& scorePath, const QString& folderRelPath)
 {
     const QFileInfo source(scorePath.toQString());
     if (source.suffix().toLower() != "mscz") {
         return RetVal<io::path_t>::make_ret(Ret::Code::NotSupported,
                                             muse::trc("drive", "Only .mscz scores can be shared on Drive."));
     }
+    if (!source.isFile()) {
+        return RetVal<io::path_t>::make_ret(Ret::Code::UnknownError, muse::trc("drive", "The score was not found."));
+    }
 
-    fileSystem()->makePath(rootPath());
+    const QString folder = folderRelPath.isEmpty() ? QString() : folderRelPath + "/";
+    fileSystem()->makePath(absPath(folderRelPath));
 
     // Same name as on the device; "Name (2).mscz" if the folder has one already (here or only on Drive)
-    QString name = source.fileName();
+    QString name = folder + source.fileName();
     for (int i = 2; QFileInfo::exists(absPath(name)) || m_items.contains(name); ++i) {
-        name = QString("%1 (%2).mscz").arg(source.completeBaseName()).arg(i);
+        name = folder + QString("%1 (%2).mscz").arg(source.completeBaseName()).arg(i);
     }
     const io::path_t target = absPath(name);
 
@@ -827,6 +835,64 @@ RetVal<io::path_t> DriveService::copyToDrive(const io::path_t& scorePath)
     refreshLocalState();
     scheduleSync(0);
     return RetVal<io::path_t>::make_ok(target);
+}
+
+bool DriveService::isInDrive(const io::path_t& path) const
+{
+    return !relPathOf(path).isEmpty();
+}
+
+void DriveService::saveOpenScoreToDrive()
+{
+    const project::INotationProjectPtr project = globalContext() ? globalContext()->currentProject() : nullptr;
+    if (!project) {
+        return;
+    }
+    if (m_status.state == State::NotSignedIn || m_status.state == State::SigningIn || m_status.state == State::NoFolder) {
+        interactive()->info(muse::trc("drive", "Save to Drive"),
+                            IInteractive::Text(muse::trc("drive", "Sign in and choose the Drive folder first, in the Drive tab of the Scores page.")));
+        return;
+    }
+    if (project->isNewlyCreated() || project->isCloudProject() || project->path().empty()) {
+        interactive()->info(muse::trc("drive", "Save to Drive"),
+                            IInteractive::Text(muse::trc("drive", "Save the score on this computer first (File > Save), then save it to Drive.")));
+        return;
+    }
+    if (isInDrive(project->path())) {
+        interactive()->info(muse::trc("drive", "Save to Drive"),
+                            IInteractive::Text(muse::trc("drive", "This score is already in the Drive folder: saving it updates it on Drive.")));
+        return;
+    }
+
+    if (project->needSave().val) {
+        const Ret saved = project->save();
+        if (!saved) {
+            interactive()->error(muse::trc("drive", "Save to Drive"), IInteractive::Text(saved.text()));
+            return;
+        }
+    }
+
+    const RetVal<io::path_t> copy = copyToDrive(project->path());
+    if (!copy.ret) {
+        interactive()->error(muse::trc("drive", "The score could not be copied to Drive."), IInteractive::Text(copy.ret.text()));
+        return;
+    }
+
+    IInteractive::ButtonData keep(int(IInteractive::Button::CustomButton) + 1, muse::trc("drive", "Keep this one open"));
+    keep.role = IInteractive::ButtonRole::RejectRole;
+    IInteractive::ButtonData open(int(IInteractive::Button::CustomButton) + 2, muse::trc("drive", "Open the Drive copy"), true);
+    open.role = IInteractive::ButtonRole::AcceptRole;
+
+    //: %1 is the file name
+    const QString text = muse::qtrc("drive", "Saved to Drive as \"%1\", and being uploaded. The score open here is still "
+                                             "the one on this computer: open the Drive copy to work on the shared one.")
+                         .arg(QFileInfo(copy.val.toQString()).fileName());
+    interactive()->question(muse::trc("drive", "Saved to Drive"), IInteractive::Text(text.toStdString()), { keep, open }, open.btn)
+    .onResolve(this, [this, path = copy.val, openBtn = open.btn](const IInteractive::Result& result) {
+        if (result.isButton(openBtn)) {
+            dispatcher()->dispatch("file-open", muse::actions::ActionData::make_arg1<QUrl>(path.toQUrl()));
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

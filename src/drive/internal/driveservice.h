@@ -28,6 +28,7 @@
 
 #include "async/asyncable.h"
 #include "modularity/ioc.h"
+#include "actions/actionable.h"
 #include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "global/iinteractive.h"
@@ -51,7 +52,8 @@ struct DriveFile;
 }
 
 namespace mu::drive {
-class DriveService : public QObject, public IDriveService, public muse::Contextable, public muse::async::Asyncable
+class DriveService : public QObject, public IDriveService, public muse::Contextable, public muse::async::Asyncable,
+    public muse::actions::Actionable
 {
     Q_OBJECT
 
@@ -99,7 +101,12 @@ public:
     muse::async::Notification accountChanged() const override;
     void checkForUpdates(bool userAsked) override;
 
-    muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) override;
+    muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath, const QString& folderRelPath = QString()) override;
+
+    //! The score is in the Drive folder
+    bool isInDrive(const muse::io::path_t& path) const;
+    //! File > Save to Drive: the open score (saved first) is copied to Drive, and the copy can be opened
+    void saveOpenScoreToDrive();
 
     static QString folderIdFromLink(const QString& linkOrId);
 

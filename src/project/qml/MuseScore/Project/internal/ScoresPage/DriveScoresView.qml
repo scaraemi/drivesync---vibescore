@@ -111,6 +111,19 @@ Item {
                 onClicked: root.driveModel.syncNow()
             }
 
+            // Desktop: scores of this computer into the folder shown (on mobile the system picker gives no file path)
+            FlatButton {
+                visible: root.isReady && Qt.platform.os !== "android" && Qt.platform.os !== "ios"
+                icon: IconCode.PLUS
+                text: qsTrc("project", "Add from computer…")
+                orientation: Qt.Horizontal
+
+                navigation.panel: navPanel
+                navigation.column: 7
+
+                onClicked: Qt.callLater(root.driveModel.addFromComputer)
+            }
+
             FlatButton {
                 visible: root.isReady
                 icon: IconCode.OPEN_FILE

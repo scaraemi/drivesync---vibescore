@@ -29,6 +29,8 @@ target_sources(drive PRIVATE
     internal/driveservice.cpp
     internal/driveservice.h
     internal/driveservice_extras.cpp
+    internal/driveuiactions.cpp
+    internal/driveuiactions.h
     internal/crashhandler.cpp
     internal/crashhandler.h
     internal/heartbeatfile.cpp

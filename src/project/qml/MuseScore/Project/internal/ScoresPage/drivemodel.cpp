@@ -201,6 +201,39 @@ void DriveModel::copyToDrive(const QString& scorePath)
                         IInteractive::Text(muse::trc("project", "The score is in the Drive tab, and it is being uploaded.")));
 }
 
+void DriveModel::addFromComputer()
+{
+    if (!driveService()) {
+        return;
+    }
+
+    const io::paths_t paths = interactive()->selectOpeningFilesSync(muse::trc("project", "Add scores to Drive"), io::path_t(),
+                                                                    { muse::trc("project", "MuseScore files") + " (*.mscz)" });
+    if (paths.empty()) {
+        return;
+    }
+
+    QStringList added;
+    QStringList failed;
+    for (const io::path_t& path : paths) {
+        const RetVal<io::path_t> copy = driveService()->copyToDrive(path, m_currentFolder);
+        if (copy.ret) {
+            added << QFileInfo(copy.val.toQString()).fileName();
+        } else {
+            failed << QFileInfo(path.toQString()).fileName() + ": " + QString::fromStdString(copy.ret.text());
+        }
+    }
+
+    if (!failed.isEmpty()) {
+        interactive()->error(muse::trc("project", "Some scores could not be copied to Drive."),
+                             IInteractive::Text(failed.join("\n").toStdString()));
+    } else if (!added.isEmpty()) {
+        //: %1 is a list of file names
+        interactive()->info(muse::trc("project", "Copied to Drive"),
+                            IInteractive::Text(muse::qtrc("project", "%1: being uploaded.").arg(added.join(", ")).toStdString()));
+    }
+}
+
 QString DriveModel::currentFolder() const
 {
     return m_currentFolder;

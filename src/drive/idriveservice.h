@@ -127,7 +127,9 @@ public:
     //! Looks for a newer release of this build on GitHub; userAsked: also says when there is none
     virtual void checkForUpdates(bool userAsked) = 0;
 
-    //! Copies a score of the library into the Drive folder (then syncs). Returns the copy.
-    virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath) = 0;
+    //! Copies a score (of the library, or any on this computer) into the Drive folder, or one of its folders
+    //! ("" = the Drive folder itself), then syncs. Returns the copy.
+    virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath,
+                                                       const QString& folderRelPath = QString()) = 0;
 };
 }

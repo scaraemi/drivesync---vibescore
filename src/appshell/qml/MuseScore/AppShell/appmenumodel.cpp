@@ -236,6 +236,16 @@ MenuItem* AppMenuModel::makeFileMenu()
 #endif
     };
 
+    // Builds with the Drive tab: File > Save to Drive, after Save as
+    if (MenuItem* saveToDrive = makeMenuItem("drive-save-to-drive")) {
+        for (qsizetype i = 0; i < fileItems.size(); ++i) {
+            if (fileItems[i] && fileItems[i]->id() == QLatin1String("file-save-as")) {
+                fileItems.insert(i + 1, saveToDrive);
+                break;
+            }
+        }
+    }
+
     return makeMenu(TranslatableString("appshell/menu/file", "&File"), fileItems, "menu-file");
 }
 

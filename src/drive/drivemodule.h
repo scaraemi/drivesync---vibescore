@@ -24,6 +24,7 @@
 
 namespace mu::drive {
 class DriveService;
+class DriveUiActions;
 
 //! Google Drive: a shared folder of scores, synced with the Drive folder of the Scores library
 class DriveModule : public muse::modularity::IModuleSetup
@@ -32,10 +33,12 @@ public:
     std::string moduleName() const override;
 
     void registerExports() override;
+    void resolveImports() override;
     void onInit(const muse::IApplication::RunMode& mode) override;
     void onDeinit() override;
 
 private:
     std::shared_ptr<DriveService> m_service;
+    std::shared_ptr<DriveUiActions> m_uiActions;
 };
 }

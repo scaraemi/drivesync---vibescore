@@ -20,7 +20,10 @@
 
 #include "modularity/ioc.h"
 
+#include "ui/iuiactionsregister.h"
+
 #include "internal/driveservice.h"
+#include "internal/driveuiactions.h"
 
 using namespace mu::drive;
 using namespace muse;
@@ -34,6 +37,15 @@ void DriveModule::registerExports()
 {
     m_service = std::make_shared<DriveService>(iocContext());
     ioc()->registerExport<IDriveService>(moduleName(), m_service);
+    m_uiActions = std::make_shared<DriveUiActions>(m_service, iocContext());
+}
+
+void DriveModule::resolveImports()
+{
+    auto ar = ioc()->resolve<muse::ui::IUiActionsRegister>(moduleName());
+    if (ar) {
+        ar->reg(m_uiActions);
+    }
 }
 
 void DriveModule::onInit(const IApplication::RunMode& mode)
@@ -43,6 +55,7 @@ void DriveModule::onInit(const IApplication::RunMode& mode)
     }
 
     m_service->init();
+    m_uiActions->init();
 }
 
 void DriveModule::onDeinit()
@@ -50,5 +63,6 @@ void DriveModule::onDeinit()
     if (m_service) {
         m_service->deinit();
     }
+    m_uiActions.reset();
     m_service.reset();
 }
