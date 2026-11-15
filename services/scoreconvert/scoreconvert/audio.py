@@ -72,7 +72,7 @@ def noise_floor_db(y: np.ndarray) -> float:
     return float(20 * np.log10(np.median(q) + 1e-9))
 
 
-def _beats(y: np.ndarray, forced_tempo: float | None) -> tuple[float, np.ndarray]:
+def _beats(y: np.ndarray, notes: list[tuple], forced_tempo: float | None) -> tuple[float, np.ndarray]:
     import librosa
 
     if forced_tempo:
@@ -80,7 +80,18 @@ def _beats(y: np.ndarray, forced_tempo: float | None) -> tuple[float, np.ndarray
         step = 60.0 / forced_tempo
         return forced_tempo, np.arange(0.0, duration + step, step)
 
-    onset_env = librosa.onset.onset_strength(y=y, sr=SR)
+    # Beats are tracked on the notes Basic Pitch found as much as on the sound: soft attacks (flute, voice,
+    # strings) leave almost no trace in the audio's onset strength, and noise leaves a lot.
+    hop = 512
+    audio_env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=hop)
+    note_env = np.zeros_like(audio_env)
+    for start, _, _, amp in notes:
+        f = int(round(start * SR / hop))
+        if 0 <= f < note_env.size:
+            note_env[f] += 0.5 + amp
+    note_env = np.convolve(note_env, [0.25, 0.5, 1.0, 0.5, 0.25], mode="same")
+    norm = lambda v: v / (np.max(v) or 1.0)  # noqa: E731
+    onset_env = 0.3 * norm(audio_env) + 0.7 * norm(note_env)
     tempo, frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=SR, units="frames", trim=False)
     tempo = float(np.atleast_1d(tempo)[0])
     beats = librosa.frames_to_time(frames, sr=SR)
@@ -150,7 +161,7 @@ def transcribe(src: Path, work: Path, out_mid: Path, opt: AudioOptions) -> Audio
     if not notes:
         raise ValueError("Nella registrazione non sono state trovate note.")
 
-    tempo, beats = _beats(y, opt.tempo)
+    tempo, beats = _beats(y, notes, opt.tempo)
     if tempo == 0.0:
         tempo = 100.0
         beats = np.arange(0.0, duration + 0.6, 0.6)

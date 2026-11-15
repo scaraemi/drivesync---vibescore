@@ -84,6 +84,7 @@ def test_recording_to_score(tmp_path: Path, noisy: bool) -> None:
                         str(src)], check=True)
 
     r = convert(src, tmp_path / "out")
+    print(f"audio {'noisy' if noisy else 'clean'}: {r.details}")
     assert r.kind == "audio" and r.experimental
     assert r.details["profile"] == ("noisy" if noisy else "clean")
     assert abs(r.details["tempo"] - 92) < 3
