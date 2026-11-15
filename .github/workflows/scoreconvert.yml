@@ -28,6 +28,11 @@ jobs:
           echo "Audiveris: $aud"; echo "MuseScore: $ms"
           docker build -t scoreconvert --build-arg AUDIVERIS_URL="$aud" --build-arg MUSESCORE_URL="$ms" services/scoreconvert
 
+      - name: Tool check
+        run: |
+          docker run --rm scoreconvert sh -c 'audiveris -help 2>&1 | head -3; mscore --long-version 2>&1 | tail -5;
+            ls /opt/musescore/plugins/platforms 2>/dev/null || find /opt/musescore -name "libq*offscreen*" -o -name "libqxcb*" | head'
+
       - name: Tests (audio, OMR on PDF and photo, notation import)
         run: docker run --rm scoreconvert python -m pytest -q -s -p no:cacheprovider tests
 
