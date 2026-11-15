@@ -37,7 +37,7 @@ jobs:
       - name: Tests (audio, OMR on PDF and photo, notation import)
         run: |
           mkdir -p testout && chmod 777 testout
-          docker run --rm -v "$PWD/testout:/out" scoreconvert python -m pytest -q -s -p no:cacheprovider --basetemp=/out tests
+          docker run --rm -v "$PWD/testout:/out" scoreconvert python -m pytest -q -s -p no:cacheprovider --basetemp=/out/t tests
 
       - name: Keep the test files
         if: always()
