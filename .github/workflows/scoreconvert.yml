@@ -31,7 +31,8 @@ jobs:
       - name: Tool check
         run: |
           docker run --rm scoreconvert sh -c 'audiveris -help 2>&1 | head -3; mscore --long-version 2>&1 | tail -5;
-            ls /opt/musescore/plugins/platforms 2>/dev/null || find /opt/musescore -name "libq*offscreen*" -o -name "libqxcb*" | head'
+            python -c "import pretty_midi as p; m=p.PrettyMIDI(); i=p.Instrument(0); i.notes=[p.Note(velocity=90,pitch=60,start=0,end=1)]; m.instruments.append(i); m.write(\"/tmp/c.mid\")";
+            mscore -o /tmp/c.mscz /tmp/c.mid 2>&1 | tail -25; ls -la /tmp/c.mscz'
 
       - name: Tests (audio, OMR on PDF and photo, notation import)
         run: docker run --rm scoreconvert python -m pytest -q -s -p no:cacheprovider tests
