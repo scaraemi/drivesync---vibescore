@@ -118,6 +118,55 @@ def _time_to_beat(times: np.ndarray, beats: np.ndarray) -> np.ndarray:
     return out
 
 
+def _clean(items: list[tuple], g: int) -> list[tuple]:
+    """Remove what Basic Pitch hears that a musician would not write. Items: (start, end, pitch, amplitude) in beats."""
+    # Same pitch twice at the same time: keep one, the longest.
+    seen: dict[tuple, tuple] = {}
+    for s, e, p, a in items:
+        if (s, p) not in seen or e > seen[(s, p)][1]:
+            seen[(s, p)] = (s, e, p, a)
+    items = sorted(seen.values())
+    if not items:
+        return items
+
+    onsets = {(it[0], it[2]) for it in items}
+    loudness = float(np.median([it[3] for it in items]))
+    kept = []
+    for s, e, p, a in items:
+        # Overtones: a weaker note an octave, a twelfth or two octaves above a note that is sounding,
+        # started at most half a beat before.
+        if any(q[2] in (p - 12, p - 19, p - 24) and q[0] <= s < q[1] and s - q[0] <= 0.5 and a < 0.7 * q[3]
+               for q in items):
+            continue
+        # A one-step blip just before the same pitch starts again: the attack was seen twice.
+        if e - s <= 1 / g + 1e-9 and (s + 1 / g, p) in onsets:
+            continue
+        # Much quieter than the rest: echoes, resonance, a note retriggered as it fades.
+        if a < 0.4 * loudness:
+            continue
+        kept.append((s, e, p, a))
+    return kept
+
+
+def _single_line(items: list[tuple]) -> list[tuple]:
+    """One note at a time: the strongest of notes starting together, each cut where the next begins."""
+    line: list[tuple] = []
+    for s, e, p, a in sorted(items, key=lambda t: (t[0], -t[3])):
+        if line and s < line[-1][1]:
+            ps, pe, pp, pa = line[-1]
+            if s == ps:
+                continue  # weaker than the one already kept
+            line[-1] = (ps, s, pp, pa)
+        line.append((s, e, p, a))
+    # Close gaps of up to a quarter of a beat: notes released early read as notes plus rests otherwise.
+    for i in range(len(line) - 1):
+        s, e, p, a = line[i]
+        nxt = line[i + 1][0]
+        if 0 < nxt - e <= 0.25 + 1e-9:
+            line[i] = (s, nxt, p, a)
+    return line
+
+
 def transcribe(src: Path, work: Path, out_mid: Path, opt: AudioOptions) -> AudioReport:
     import librosa
     import pretty_midi
@@ -179,7 +228,7 @@ def transcribe(src: Path, work: Path, out_mid: Path, opt: AudioOptions) -> Audio
     qs = np.maximum(np.round(starts * g) / g, 0.0)
     qe = np.maximum(np.round(ends * g) / g, qs + 1 / g)
 
-    items = sorted(zip(qs, qe, (n[2] for n in notes), (n[3] for n in notes)), key=lambda t: (t[0], -t[3]))
+    items = _clean(sorted(zip(qs, qe, (n[2] for n in notes), (n[3] for n in notes))), g)
     monophonic = opt.monophonic
     if monophonic is None:
         onsets = [t[0] for t in items]
@@ -187,45 +236,7 @@ def transcribe(src: Path, work: Path, out_mid: Path, opt: AudioOptions) -> Audio
         # Reverb tails and overtones make a few stray chords even in a single line.
         monophonic = together < 0.12 * len(onsets)
     if monophonic:
-        mono: list[tuple] = []
-        for s, e, p, a in items:
-            if mono and s < mono[-1][1]:
-                ps, pe, pp, pa = mono[-1]
-                if s == ps:
-                    if a > pa:
-                        mono[-1] = (s, e, p, a)
-                    continue
-                mono[-1] = (ps, s, pp, pa)  # cut the previous note where the new one starts
-            mono.append((s, e, p, a))
-        # Close gaps of up to a beat's fourth: notes released early read as notes plus rests otherwise.
-        for i in range(len(mono) - 1):
-            s, e, p, a = mono[i]
-            nxt = mono[i + 1][0]
-            if 0 < nxt - e <= 0.25 + 1e-9:
-                mono[i] = (s, nxt, p, a)
-        items = mono
-    else:
-        # Same pitch twice at the same time: keep one, the longest.
-        seen: dict[tuple, tuple] = {}
-        for s, e, p, a in items:
-            k = (s, p)
-            if k not in seen or e > seen[k][1]:
-                seen[k] = (s, e, p, a)
-        items = sorted(seen.values())
-        # Overtones: a weak note an octave, a twelfth or two octaves above a stronger one starting together.
-        by_start: dict[float, list[tuple]] = {}
-        for it in items:
-            by_start.setdefault(it[0], []).append(it)
-        onset_set = {(it[0], it[2]) for it in items}
-        kept = []
-        for s, e, p, a in items:
-            if any(q[2] in (p - 12, p - 19, p - 24) and a < 0.7 * q[3] for q in by_start[s]):
-                continue
-            # A one-step blip just before the same pitch starts again: the attack was seen twice.
-            if e - s <= 1 / g + 1e-9 and (s + 1 / g, p) in onset_set:
-                continue
-            kept.append((s, e, p, a))
-        items = kept
+        items = _single_line(items)
 
     spb = 60.0 / tempo
     pm = pretty_midi.PrettyMIDI(initial_tempo=tempo, resolution=480)
