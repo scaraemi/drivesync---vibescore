@@ -61,6 +61,10 @@ void CloudScoresModel::load()
         loadItemsIfNecessary();
     });
 
+    convertFileToScoreScenario()->uploadingScores().notification.onNotify(this, [this]() {
+        updateWatchedItems({}, /*allowRefresh*/ false);
+    });
+
     convertFileToScoreScenario()->watchedScores().notification.onNotify(this, [this]() {
         updateWatchedItems();
     });
@@ -75,6 +79,10 @@ void CloudScoresModel::load()
 
         m_pollingGaveUp = gaveUp;
         updateWatchedItems();
+    });
+
+    deleteCloudScoreScenario()->scoreDeleted().onReceive(this, [this](int scoreId) {
+        removeScore(scoreId);
     });
 }
 
@@ -107,9 +115,38 @@ void CloudScoresModel::retryAllConversions()
     updateWatchedItems();
 }
 
+void CloudScoresModel::cancelUpload(int uploadId)
+{
+    convertFileToScoreScenario()->cancelUpload(uploadId);
+}
+
 void CloudScoresModel::cancelConversion(int convertType, int convertId)
 {
     convertFileToScoreScenario()->cancelConversion(static_cast<ConvertType>(convertType), convertId);
+}
+
+void CloudScoresModel::removeScore(int scoreId)
+{
+    for (size_t i = m_watchedItemCount; i < m_items.size(); ++i) {
+        if (m_items.at(i).value(CLOUD_SCORE_ID_KEY).toInt() != scoreId) {
+            continue;
+        }
+
+        const int row = static_cast<int>(i);
+
+        beginRemoveRows(QModelIndex(), row, row);
+        m_items.erase(m_items.begin() + row);
+        endRemoveRows();
+
+        if (m_totalItems != muse::nidx && m_totalItems > 0) {
+            --m_totalItems;
+        }
+
+        emit hasMoreChanged();
+        loadItemsIfNecessary();
+
+        return;
+    }
 }
 
 CloudScoresModel::State CloudScoresModel::state() const
@@ -275,8 +312,22 @@ bool CloudScoresModel::containsCloudScore(int scoreId) const
 
 std::vector<QVariantMap> CloudScoresModel::buildWatchedItems(const std::unordered_set<int>& downloadedScoreIds) const
 {
+    const UploadingScoreList uploadingScores = convertFileToScoreScenario()->uploadingScores().val;
     const WatchedScoreList watchedScores = convertFileToScoreScenario()->watchedScores().val;
     std::vector<QVariantMap> items;
+    items.reserve(uploadingScores.size() + watchedScores.size());
+
+    for (const UploadingScore& uploadingScore : uploadingScores) {
+        QVariantMap obj;
+        obj[NAME_KEY] = uploadingScore.name.toQString();
+        obj[IS_CREATE_NEW_KEY] = false;
+        obj[IS_NO_RESULTS_FOUND_KEY] = false;
+        obj[PROCESSING_STATUS_KEY] = PROCESSING_STATUS_PROCESSING;
+        obj[UPLOAD_ID_KEY] = uploadingScore.uploadId;
+        obj[IS_CLOUD_KEY] = false;
+        obj[CLOUD_VISIBILITY_KEY] = static_cast<int>(cloud::Visibility::Private);
+        items.push_back(obj);
+    }
 
     for (const WatchedScore& watchedScore : watchedScores) {
         if (watchedScore.conversion.status != ConvertStatus::Processing) {

@@ -54,6 +54,7 @@ static const QUrl MUSESCORECOM_SCORE_DOWNLOAD_API_URL(MUSESCORECOM_API_ROOT_URL 
 static const QUrl MUSESCORECOM_SCORE_DOWNLOAD_SHARED_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/download-shared");
 static const QUrl MUSESCORECOM_UPLOAD_SCORE_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/upload");
 static const QUrl MUSESCORECOM_UPLOAD_AUDIO_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/audio");
+static const QUrl MUSESCORECOM_SCORE_DELETE_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/score");
 
 static const QUrl MUSESCORECOM_CONVERT_CONFIG_URL("https://musescore.com/static/musescore/studio/upload-config.json");
 static const QUrl MUSESCORECOM_CONVERT_UPLOAD_API_URL(MUSESCORECOM_API_ROOT_URL + "/score/convert/convert");
@@ -734,13 +735,18 @@ RetVal<ScoreInfo> MuseScoreComService::downloadScoreInfo(int scoreId)
     TRACEFUNC;
 
     RetVal<ScoreInfo> result = RetVal<ScoreInfo>::make_ok(ScoreInfo());
+    bool isFinished = false;
 
     QEventLoop loop;
-    doDownloadScoreInfo(scoreId, [&result, &loop](const RetVal<ScoreInfo>& info) {
+    doDownloadScoreInfo(scoreId, [&result, &loop, &isFinished](const RetVal<ScoreInfo>& info) {
         result = info;
+        isFinished = true;
         loop.quit();
     });
-    loop.exec();
+
+    if (!isFinished) {
+        loop.exec();
+    }
 
     return result;
 }
@@ -775,36 +781,53 @@ void MuseScoreComService::doDownloadScoreInfo(int scoreId, std::function<void(co
 Promise<ScoresList> MuseScoreComService::downloadScoresList(int scoresPerBatch, int batchNumber)
 {
     return Promise<ScoresList>([this, scoresPerBatch, batchNumber](auto resolve, auto reject) {
+        auto list = std::make_shared<ScoresList>();
+
+        executeAsyncRequest([this, scoresPerBatch, batchNumber, list]() {
+            return doDownloadScoresList(scoresPerBatch, batchNumber, list);
+        }).onResolve(this, [list, resolve, reject](const Ret& ret) {
+            if (ret) {
+                (void)resolve(*list);
+            } else {
+                (void)reject(ret.code(), ret.toString());
+            }
+        });
+
+        return Promise<ScoresList>::dummy_result();
+    });
+}
+
+Promise<Ret> MuseScoreComService::doDownloadScoresList(int scoresPerBatch, int batchNumber, std::shared_ptr<ScoresList> list)
+{
+    return Promise<Ret>([this, scoresPerBatch, batchNumber, list](auto resolve, auto) {
         QVariantMap params;
         params["per-page"] = scoresPerBatch;
         params["page"] = batchNumber;
 
         RetVal<QUrl> scoresListUrl = prepareUrlForRequest(MUSESCORECOM_SCORES_LIST_API_URL, params);
         if (!scoresListUrl.ret) {
-            return reject(scoresListUrl.ret.code(), scoresListUrl.ret.toString());
+            return resolve(scoresListUrl.ret);
         }
 
         auto receivedData = std::make_shared<QBuffer>();
         RetVal<Progress> progress = m_networkManager->get(scoresListUrl.val, receivedData, headers());
         if (!progress.ret) {
-            return reject(progress.ret.code(), progress.ret.toString());
+            return resolve(progress.ret);
         }
 
-        progress.val.finished().onReceive(this, [batchNumber, receivedData, resolve, reject](const ProgressResult& res) {
+        progress.val.finished().onReceive(this, [this, batchNumber, receivedData, list, resolve](const ProgressResult& res) {
             if (!res.ret) {
-                (void)reject(res.ret.code(), res.ret.toString());
+                printServerReply(*receivedData);
+                (void)resolve(res.ret);
                 return;
             }
 
-            RetVal<ScoresList> list = parseScoreList(receivedData->data(), batchNumber);
-            if (list.ret) {
-                (void)resolve(list.val);
-            } else {
-                (void)reject(list.ret.code(), list.ret.toString());
-            }
+            RetVal<ScoresList> parsed = parseScoreList(receivedData->data(), batchNumber);
+            *list = parsed.val;
+            (void)resolve(parsed.ret);
         });
 
-        return Promise<ScoresList>::dummy_result();
+        return Promise<Ret>::dummy_result();
     });
 }
 
@@ -859,6 +882,44 @@ Promise<Ret> MuseScoreComService::doDownloadScore(int scoreId, DevicePtr scoreDa
 
         getProgress.val.finished().onReceive(this, [this, resolve](const ProgressResult& res) {
             (void)resolve(uploadingDownloadingRetFromRawRet(res.ret));
+        });
+
+        return Promise<Ret>::dummy_result();
+    });
+}
+
+Promise<Ret> MuseScoreComService::deleteScore(int scoreId)
+{
+    return executeAsyncRequest([this, scoreId]() {
+        return doDeleteScore(scoreId);
+    });
+}
+
+Promise<Ret> MuseScoreComService::doDeleteScore(int scoreId)
+{
+    return Promise<Ret>([this, scoreId](auto resolve, auto) {
+        QVariantMap params;
+        params[SCORE_ID_KEY] = scoreId;
+
+        RetVal<QUrl> url = prepareUrlForRequest(MUSESCORECOM_SCORE_DELETE_API_URL, params);
+        if (!url.ret) {
+            return resolve(url.ret);
+        }
+
+        auto receivedData = std::make_shared<QBuffer>();
+        RetVal<Progress> progress = m_networkManager->del(url.val, receivedData, headers());
+        if (!progress.ret) {
+            return resolve(progress.ret);
+        }
+
+        progress.val.finished().onReceive(this, [this, receivedData, resolve](const ProgressResult& res) {
+            if (!res.ret) {
+                printServerReply(*receivedData);
+                (void)resolve(uploadingDownloadingRetFromRawRet(res.ret));
+                return;
+            }
+
+            (void)resolve(make_ok());
         });
 
         return Promise<Ret>::dummy_result();
@@ -1036,15 +1097,16 @@ Promise<RetVal<ConvertConfig> > MuseScoreComService::fetchConfig()
     });
 }
 
-ProgressPtr MuseScoreComService::startConvert(const ConvertUploadDataPtr& data)
+ProgressPtr MuseScoreComService::uploadToConvert(const ConvertUploadDataPtr& data)
 {
     ProgressPtr progress = std::make_shared<Progress>();
     progress->start();
 
     executeAsyncRequest([this, data, progress]() {
-        return doUpload(data, progress);
+        return doUploadToConvert(data, progress);
     }).onResolve(this, [progress](const Ret& ret) {
-        if (progress->isStarted()) {
+        //! NOTE: cancel() finishes it by itself
+        if (progress->isStarted() && !progress->isCanceled()) {
             progress->finish(ret);
         }
     });
@@ -1052,13 +1114,18 @@ ProgressPtr MuseScoreComService::startConvert(const ConvertUploadDataPtr& data)
     return progress;
 }
 
-Promise<Ret> MuseScoreComService::doUpload(const ConvertUploadDataPtr& data, ProgressPtr progress)
+Promise<Ret> MuseScoreComService::doUploadToConvert(const ConvertUploadDataPtr& data, ProgressPtr progress)
 {
     TRACEFUNC;
 
     return make_promise<Ret>([this, data, progress](auto resolve, auto) {
         IF_ASSERT_FAILED(data->type != ConvertType::Unknown) {
             return resolve(make_ret(cloud::Err::InvalidData));
+        }
+
+        //! NOTE: possible when canceled while the tokens were being updated
+        if (progress->isCanceled()) {
+            return resolve(make_ret(Ret::Code::Cancel));
         }
 
         RetVal<QUrl> uploadUrl = prepareUrlForRequest(MUSESCORECOM_CONVERT_UPLOAD_API_URL);
@@ -1078,7 +1145,16 @@ Promise<Ret> MuseScoreComService::doUpload(const ConvertUploadDataPtr& data, Pro
             progress->progress(current, total, msg);
         });
 
-        uploadProgress.val.finished().onReceive(this, [this, data, receivedData, resolve, progress](const ProgressResult& res) {
+        progress->canceled().onNotify(this, [uploadProgress]() mutable {
+            uploadProgress.val.cancel();
+        });
+
+        uploadProgress.val.finished().onReceive(this, [this, data, receivedData, resolve, progress,
+                                                       uploadProgress](const ProgressResult& res) mutable {
+            //! NOTE: cancel() finishes it again after the aborted reply did
+            uploadProgress.val.finished().disconnect(this);
+            progress->canceled().disconnect(this);
+
             if (!res.ret) {
                 printServerReply(*receivedData);
                 Ret ret = uploadingDownloadingRetFromRawRet(res.ret);

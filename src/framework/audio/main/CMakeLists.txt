@@ -47,6 +47,9 @@ target_sources(muse_audio_main PRIVATE
     internal/player.h
     internal/audiodrivercontroller.cpp
     internal/audiodrivercontroller.h
+    internal/iaudiodriverfactory.h
+    internal/audiodriverfactory.cpp
+    internal/audiodriverfactory.h
 )
 
 # Also on the web: the sound fonts are files there too (see buildscripts/web/vibescore-web.js)

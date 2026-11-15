@@ -437,8 +437,8 @@ Ret ProjectActionsController::doFinishOpenProject()
         QTimer::singleShot(1000, [this]() {
             if (museSoundsCheckUpdateScenario()->hasUpdate()) {
                 museSoundsCheckUpdateScenario()->showUpdate();
-            } else if (!museSamplerCheckUpdateScenario()->alreadyChecked()) {
-                museSamplerCheckUpdateScenario()->checkAndShowUpdateIfNeed();
+            } else if (!museSamplerCheckStatusScenario()->alreadyChecked()) {
+                museSamplerCheckStatusScenario()->checkAndShowStatusIfNeed();
             }
         });
     };

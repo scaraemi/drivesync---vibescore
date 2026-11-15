@@ -34,6 +34,8 @@ FocusScope {
 
     property string subSection: ""
 
+    signal subSectionApplied()
+
     QtObject {
         id: prv
 
@@ -49,7 +51,10 @@ FocusScope {
         case "myOnlineScores":
         case "library": scoresPageModel.tabIndex = 1; break
         case "drive": scoresPageModel.tabIndex = drive.isAvailable ? 2 : 1; break
+        default: return
         }
+
+        root.subSectionApplied()
     }
 
     NavigationSection {
@@ -322,6 +327,10 @@ FocusScope {
             onViewOnlineRequested: function(scoreId) {
                 Qt.callLater(scoresPageModel.viewOnline, scoreId)
             }
+
+            onDeleteScoreRequested: function(scoreId, scoreName) {
+                Qt.callLater(scoresPageModel.deleteScore, scoreId, scoreName)
+            }
         }
     }
 
@@ -417,6 +426,10 @@ FocusScope {
 
             onViewOnlineRequested: function(scoreId) {
                 Qt.callLater(scoresPageModel.viewOnline, scoreId)
+            }
+
+            onDeleteScoreRequested: function(scoreId, scoreName) {
+                Qt.callLater(scoresPageModel.deleteScore, scoreId, scoreName)
             }
 
             Connections {

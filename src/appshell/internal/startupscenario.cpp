@@ -333,11 +333,11 @@ void StartupScenario::showStartupDialogsIfNeed(StartupModeType modeType)
                 configuration()->setWelcomeDialogLastShownVersion(configuration()->museScoreVersion());
 
                 if (shouldCheckForMuseSamplerUpdate) {
-                    checkAndShowMuseSamplerUpdateIfNeed();
+                    checkAndShowMuseSamplerStatusIfNeed();
                 }
             });
         } else if (shouldCheckForMuseSamplerUpdate) {
-            checkAndShowMuseSamplerUpdateIfNeed();
+            checkAndShowMuseSamplerStatusIfNeed();
         }
     };
 
@@ -379,10 +379,10 @@ bool StartupScenario::shouldShowWelcomeDialog(StartupModeType modeType) const
 #endif
 }
 
-void StartupScenario::checkAndShowMuseSamplerUpdateIfNeed()
+void StartupScenario::checkAndShowMuseSamplerStatusIfNeed()
 {
-    if (museSamplerCheckForUpdateScenario() && !museSamplerCheckForUpdateScenario()->alreadyChecked()) {
-        museSamplerCheckForUpdateScenario()->checkAndShowUpdateIfNeed();
+    if (museSamplerCheckStatusScenario() && !museSamplerCheckStatusScenario()->alreadyChecked()) {
+        museSamplerCheckStatusScenario()->checkAndShowStatusIfNeed();
     }
 }
 
@@ -425,7 +425,7 @@ void StartupScenario::restoreLastSession()
         } else {
             removeProjectsUnsavedChanges(configuration()->sessionProjectsPaths());
             sessionsManager()->reset();
-            checkAndShowMuseSamplerUpdateIfNeed();
+            checkAndShowMuseSamplerStatusIfNeed();
         }
     });
 #endif

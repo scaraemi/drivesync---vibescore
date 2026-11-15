@@ -44,6 +44,7 @@ FlatButton {
     signal viewOnlineRequested()
     signal removeFromRecentFilesRequested()
     signal extraActionRequested(string actionId)
+    signal deleteScoreRequested()
 
     function show(position, item) {
         let target = item ? item : root
@@ -91,14 +92,21 @@ FlatButton {
             result.push({ id: "reveal-in-file-browser", title: root.revealInFileBrowserTitle })
         }
 
-        if (root.showRemoveFromRecentFiles) {
+        if (root.showRemoveFromRecentFiles || root.isCloud) {
             result.push({}) // separator
+        }
+
+        if (root.showRemoveFromRecentFiles) {
             result.push({ id: "remove-from-recent-files", title: qsTrc("project", "Remove from recent files list") })
         }
 
         if (!root.isCloud && root.extraActions.length > 0) {
             result.push({}) // separator
             result = result.concat(root.extraActions)
+        }
+
+        if (root.isCloud) {
+            result.push({ id: "delete-score", title: qsTrc("project", "Delete score"), icon: IconCode.DELETE_TANK })
         }
 
         return result
@@ -130,6 +138,9 @@ FlatButton {
                 break
             case "remove-from-recent-files":
                 root.removeFromRecentFilesRequested()
+                break
+            case "delete-score":
+                root.deleteScoreRequested()
                 break
             default:
                 root.extraActionRequested(itemId)
