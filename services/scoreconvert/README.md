@@ -12,6 +12,27 @@ gli altri formati di notazione. È il servizio dietro la voce **Importa da PDF /
 | Manoscritti, foto difficili | Claude vision → MusicXML (se `ANTHROPIC_API_KEY`) | **Sperimentale** |
 | Audio WAV/MP3/M4A/OGG/video… | Basic Pitch + allineamento ai battiti | **Sperimentale**: note giuste, ritmo da rivedere |
 
+## Come si usa: tramite Drive, senza server
+
+Dalle app (*File > Convert to score…* su desktop, *Convert to score…* nella tab Drive) i file finiscono nella
+sottocartella Drive **`Da convertire`**. Il workflow `Scoreconvert: Drive` di GitHub Actions la controlla ogni
+10 minuti (GitHub spesso ritarda di qualche minuto; *Run workflow* converte subito), scarica l'immagine solo se
+c'è lavoro, e mette il `.mscz` nella cartella delle partiture: la sync lo porta su tutti i dispositivi.
+
+- `Da convertire/Convertiti`: gli originali e il `.mid`
+- `Da convertire/Errori`: i file non convertiti, con il motivo nella descrizione del file su Drive
+- Gli avvisi su un risultato (sperimentale, audio rumoroso…) sono nella descrizione del `.mscz` su Drive
+- Una partitura esistente non viene mai sovrascritta: `Brano (2).mscz`
+
+Secrets del repository: `VS_DRIVE_CLIENT_ID`, `VS_DRIVE_CLIENT_SECRET`, `VS_DRIVE_FOLDER_ID` (gli stessi delle
+app) e `SCORECONVERT_REFRESH_TOKEN`, un accesso Google all'account del Drive. L'app OAuth deve essere
+"In produzione": in "Test" Google fa scadere il token dopo 7 giorni. Facoltativo: `ANTHROPIC_API_KEY`.
+
+GitHub sospende i workflow pianificati dopo 60 giorni senza attività nel repository: in quel caso va riattivato
+dalla pagina Actions.
+
+Il servizio HTTP descritto sotto resta disponibile per chi ha un server.
+
 Il tipo si riconosce dal contenuto, non dal nome (un MIDI arrivato come `.bin` da WhatsApp funziona).
 
 ## Audio
