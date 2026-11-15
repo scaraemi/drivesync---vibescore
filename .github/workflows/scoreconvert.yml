@@ -35,7 +35,17 @@ jobs:
             mscore -o /tmp/c.mscz /tmp/c.mid 2>&1 | tail -25; ls -la /tmp/c.mscz'
 
       - name: Tests (audio, OMR on PDF and photo, notation import)
-        run: docker run --rm scoreconvert python -m pytest -q -s -p no:cacheprovider tests
+        run: |
+          mkdir -p testout && chmod 777 testout
+          docker run --rm -v "$PWD/testout:/out" scoreconvert python -m pytest -q -s -p no:cacheprovider --basetemp=/out tests
+
+      - name: Keep the test files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoreconvert-tests
+          path: testout
+          retention-days: 7
 
       - name: Service smoke test
         run: |
