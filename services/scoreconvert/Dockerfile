@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libegl1 libopengl0 libglib2.0-0 libnss3 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 \
         libfreetype6 libasound2 libdbus-1-3 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
         libxcb-xinerama0 libxcb-randr0 libxcb-render-util0 libxcb-image0 libxrender1 libxi6 libsm6 \
-        libpulse0 libjack-jackd2-0 fonts-dejavu-core \
+        libpulse0 libjack-jackd2-0 fonts-dejavu-core xvfb xauth \
     && rm -rf /var/lib/apt/lists/*
 
 # Audiveris: the Linux installer bundles its own Java runtime. Unpacked, not installed: its post-install
@@ -34,7 +34,8 @@ RUN api=https://api.github.com/repos/musescore/MuseScore/releases/${MUSESCORE_VE
     [ -n "$url" ] \
     && echo "MuseScore: $url" && curl -fsSL -o /tmp/ms.AppImage "$url" && chmod +x /tmp/ms.AppImage \
     && cd /opt && /tmp/ms.AppImage --appimage-extract >/dev/null && mv squashfs-root musescore && rm /tmp/ms.AppImage \
-    && printf '#!/bin/sh\nexec /opt/musescore/AppRun "$@"\n' > /usr/local/bin/mscore && chmod +x /usr/local/bin/mscore
+    && printf '#!/bin/sh\n# MuseScore 4 always asks for the xcb platform: give it a virtual display.\nunset QT_QPA_PLATFORM\nexec xvfb-run -a -s "-screen 0 1280x1024x24" /opt/musescore/AppRun "$@"\n' > /usr/local/bin/mscore \
+    && chmod +x /usr/local/bin/mscore
 
 WORKDIR /app
 COPY requirements.txt .
@@ -42,7 +43,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY scoreconvert scoreconvert
 COPY tests tests
 
-ENV MSCORE=mscore AUDIVERIS=audiveris QT_QPA_PLATFORM=offscreen TF_CPP_MIN_LOG_LEVEL=3 \
+ENV MSCORE=mscore AUDIVERIS=audiveris TF_CPP_MIN_LOG_LEVEL=3 \
     SCORECONVERT_DATA=/data SCORECONVERT_WORKERS=1 PYTHONUNBUFFERED=1
 VOLUME /data
 EXPOSE 8080
