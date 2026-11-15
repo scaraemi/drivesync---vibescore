@@ -16,13 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpulse0 libjack-jackd2-0 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Audiveris: the Linux installer bundles its own Java runtime.
+# Audiveris: the Linux installer bundles its own Java runtime. Unpacked, not installed: its post-install
+# script registers desktop menus and fails in a container.
 RUN url="$AUDIVERIS_URL"; [ -n "$url" ] || url=$(curl -fsSL "https://api.github.com/repos/Audiveris/audiveris/releases/tags/${AUDIVERIS_VERSION}" \
         | jq -r '.assets[].browser_download_url' | grep -E 'ubuntu22.*x86_64\.deb$' | head -1) \
     && echo "Audiveris: $url" && curl -fsSL -o /tmp/audiveris.deb "$url" \
-    && apt-get update && apt-get install -y --no-install-recommends /tmp/audiveris.deb \
-    && rm -rf /tmp/audiveris.deb /var/lib/apt/lists/* \
-    && ln -s "$(dpkg -L audiveris | grep -E '/bin/Audiveris$' | head -1)" /usr/local/bin/audiveris
+    && mkdir /tmp/aud && dpkg-deb -x /tmp/audiveris.deb /tmp/aud \
+    && bin=$(find /tmp/aud -type f -name Audiveris -path '*/bin/*' | head -1) && echo "binary: $bin" \
+    && root=${bin%/bin/Audiveris} && mv "$root" /opt/audiveris && rm -rf /tmp/aud /tmp/audiveris.deb \
+    && ln -s /opt/audiveris/bin/Audiveris /usr/local/bin/audiveris \
+    && audiveris -help 2>&1 | head -3
 
 # MuseScore Studio: the AppImage, extracted (no FUSE in containers).
 RUN api=https://api.github.com/repos/musescore/MuseScore/releases/${MUSESCORE_VERSION}; \
