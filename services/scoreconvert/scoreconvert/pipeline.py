@@ -80,13 +80,19 @@ def _sheet(src: Path, kind: Kind, work: Path, opt: Options, progress: Progress) 
     pages: list[Path]
     if kind is Kind.PDF:
         progress("pdf")
-        pages = omr.pdf_to_images(src, work / "pages")
+        try:
+            pages = omr.pdf_to_images(src, work / "pages")
+        except subprocess.CalledProcessError as e:
+            raise ConversionError("Il PDF è danneggiato o protetto.") from e
         if not pages:
             raise ConversionError("Il PDF non contiene pagine.")
         audiveris_in = [src]  # Audiveris reads PDFs itself, at their native resolution
     else:
         progress("photo")
-        pages = [omr.prepare_photo(src, work / "page.png")]
+        try:
+            pages = [omr.prepare_photo(src, work / "page.png")]
+        except (omr.OmrFailed, subprocess.CalledProcessError) as e:
+            raise ConversionError("Immagine non leggibile.") from e
         audiveris_in = pages
 
     if opt.sheet != "handwritten":

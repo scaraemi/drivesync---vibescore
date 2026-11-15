@@ -102,6 +102,9 @@ public:
     void checkForUpdates(bool userAsked) override;
 
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath, const QString& folderRelPath = QString()) override;
+    void convertFiles() override;
+    //! Uploads the files to the converter folder on Drive (created if missing), one after the other
+    void sendToConverter(const QStringList& files);
 
     //! The score is in the Drive folder
     bool isInDrive(const muse::io::path_t& path) const;
@@ -111,6 +114,8 @@ public:
     static QString folderIdFromLink(const QString& linkOrId);
 
 private:
+    void uploadToConverter(const QString& inboxId, QStringList files, QStringList sent, QStringList failed);
+
     struct OpenScore {
         QString relPath;           // empty: the open score is not in the Drive folder
         QString fileId;            // empty: not on Drive yet

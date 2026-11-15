@@ -132,3 +132,63 @@ def test_printed_sheet_to_score(tmp_path: Path, as_photo: bool) -> None:
     match = difflib.SequenceMatcher(a=expected, b=got).ratio()
     print(f"OMR {'photo' if as_photo else 'pdf'}: {len(got)} notes, sequence match {match:.2f}")
     assert match > 0.85
+
+
+class FakeDrive:
+    """In-memory stand-in for drive_worker.Drive: folders and files by id."""
+
+    def __init__(self) -> None:
+        self.items: dict[str, dict] = {"root": {"name": "Partiture", "folder": True, "parent": None}}
+        self.n = 0
+
+    def _add(self, parent: str, name: str, folder: bool, data: bytes = b"", description: str = "") -> str:
+        self.n += 1
+        fid = f"id{self.n}"
+        self.items[fid] = {"name": name, "folder": folder, "parent": parent, "data": data, "description": description}
+        return fid
+
+    def children(self, folder: str, folders=None) -> list[dict]:
+        return [{"id": k, "name": v["name"]} for k, v in self.items.items()
+                if v["parent"] == folder and (folders is None or v["folder"] == folders)]
+
+    def subfolder(self, parent: str, name: str, create: bool = True):
+        for f in self.children(parent, folders=True):
+            if f["name"] == name:
+                return f["id"]
+        return self._add(parent, name, True) if create else None
+
+    def download(self, fid: str, dst: Path) -> None:
+        dst.write_bytes(self.items[fid]["data"])
+
+    def upload(self, parent: str, name: str, src: Path, mime: str, description: str = "") -> dict:
+        return {"id": self._add(parent, name, False, src.read_bytes(), description)}
+
+    def move(self, fid: str, src: str, dst: str, description=None) -> None:
+        self.items[fid]["parent"] = dst
+        if description is not None:
+            self.items[fid]["description"] = description
+
+    def names(self, folder: str) -> list[str]:
+        return sorted(f["name"] for f in self.children(folder, folders=False))
+
+
+@needs_mscore
+def test_drive_worker(tmp_path: Path) -> None:
+    from scoreconvert.drive_worker import run
+
+    melody_midi(tmp_path / "a.mid")
+    d = FakeDrive()
+    d._add("root", "Canone.mscz", False, b"existing score")
+    inbox = d.subfolder("root", "Da convertire")
+    d._add(inbox, "Canone.mid", False, (tmp_path / "a.mid").read_bytes())
+    d._add(inbox, "rotto.pdf", False, b"%PDF-1.4 not really")
+
+    run(d, "root")
+
+    assert d.names("root") == ["Canone (2).mscz", "Canone.mscz"]  # never overwrites
+    done, failed = d.subfolder(inbox, "Convertiti"), d.subfolder(inbox, "Errori")
+    assert d.names(inbox) == []
+    assert d.names(done) == ["Canone.mid", "Canone.mid"]  # original and exported MIDI
+    assert d.names(failed) == ["rotto.pdf"]
+    bad = next(v for v in d.items.values() if v["name"] == "rotto.pdf")
+    assert bad["description"].startswith("Conversione non riuscita")

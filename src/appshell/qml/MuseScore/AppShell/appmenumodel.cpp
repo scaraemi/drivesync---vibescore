@@ -246,6 +246,16 @@ MenuItem* AppMenuModel::makeFileMenu()
         }
     }
 
+    // And File > Convert to score…, after Open recent
+    if (MenuItem* convert = makeMenuItem("drive-convert-files")) {
+        for (qsizetype i = 0; i < fileItems.size(); ++i) {
+            if (fileItems[i] && fileItems[i]->id() == QLatin1String("menu-file-open")) {
+                fileItems.insert(i + 1, convert);
+                break;
+            }
+        }
+    }
+
     return makeMenu(TranslatableString("appshell/menu/file", "&File"), fileItems, "menu-file");
 }
 
