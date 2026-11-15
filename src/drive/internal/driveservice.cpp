@@ -846,9 +846,9 @@ void DriveService::convertFiles()
 {
     const std::string title = muse::trc("drive", "Convert to score");
     if (m_status.state == State::NotSignedIn || m_status.state == State::SigningIn || m_status.state == State::NoFolder) {
-        interactive()->info(title, IInteractive::Text(muse::trc("drive", "The converter works through Drive: sign in and "
-                                                                          "choose the Drive folder first, in the Drive tab "
-                                                                          "of the Scores page.")));
+        //: The score converter
+        const std::string text = muse::trc("drive", "The converter works through Drive: sign in and choose the Drive folder first, in the Drive tab of the Scores page.");
+        interactive()->info(title, IInteractive::Text(text));
         return;
     }
 
@@ -897,11 +897,7 @@ void DriveService::uploadToConverter(const QString& inboxId, QStringList files, 
         }
         if (!sent.isEmpty()) {
             //: %1 is a list of file names
-            const QString text = muse::qtrc("drive", "Sent: %1.\n\nThe scores will appear in the Drive folder in about "
-                                                     "10–20 minutes, with the same names and the .mscz extension. "
-                                                     "Results from photos, handwriting and recordings need checking: "
-                                                     "the notes about each one are in the file's description on Drive.")
-                                 .arg(sent.join(", "));
+            const QString text = muse::qtrc("drive", "Sent: %1.\n\nThe scores will appear in the Drive folder in about 10–20 minutes, with the same names and the .mscz extension. Results from photos, handwriting and recordings need checking: the notes about each one are in the file’s description on Drive.").arg(sent.join(", "));
             interactive()->info(muse::trc("drive", "Sent to the converter"), IInteractive::Text(text.toStdString()));
         }
         return;
@@ -967,7 +963,7 @@ void DriveService::saveOpenScoreToDrive()
     open.role = IInteractive::ButtonRole::AcceptRole;
 
     //: %1 is the file name
-    const QString text = muse::qtrc("drive", "Saved to Drive as \"%1\", and being uploaded. The score open here is still "
+    const QString text = muse::qtrc("drive", "Saved to Drive as “%1”, and being uploaded. The score open here is still "
                                              "the one on this computer: open the Drive copy to work on the shared one.")
                          .arg(QFileInfo(copy.val.toQString()).fileName());
     interactive()->question(muse::trc("drive", "Saved to Drive"), IInteractive::Text(text.toStdString()), { keep, open }, open.btn)
