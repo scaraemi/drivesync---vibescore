@@ -39,6 +39,10 @@ jobs:
           mkdir -p testout && chmod 777 testout
           docker run --rm -v "$PWD/testout:/out" scoreconvert python -m pytest -q -s -p no:cacheprovider --basetemp=/out/t tests
 
+      - name: Make the test files readable
+        if: always()
+        run: sudo chown -R "$USER" testout || true
+
       - name: Keep the test files
         if: always()
         uses: actions/upload-artifact@v4
