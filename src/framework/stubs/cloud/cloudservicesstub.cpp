@@ -56,7 +56,7 @@ async::Promise<RetVal<ConvertConfig> > MuseScoreComConvertServiceStub::fetchConf
     return notSupportedPromise<ConvertConfig>();
 }
 
-ProgressPtr MuseScoreComConvertServiceStub::startConvert(const ConvertUploadDataPtr&)
+ProgressPtr MuseScoreComConvertServiceStub::uploadToConvert(const ConvertUploadDataPtr&)
 {
     return failedProgress();
 }
@@ -161,4 +161,9 @@ ProgressPtr AudioComServiceStub::uploadAudio(DevicePtr, const QString&, const QS
 CloudInfo AudioComServiceStub::cloudInfo() const
 {
     return CloudInfo();
+}
+
+async::Promise<Ret> MuseScoreComServiceStub::deleteScore(int)
+{
+    return notSupportedRetPromise();
 }

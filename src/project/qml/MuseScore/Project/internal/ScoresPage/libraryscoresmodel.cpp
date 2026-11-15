@@ -45,7 +45,7 @@ void LibraryScoresModel::load()
     update();
 
     // Saving a score (also as a new one) puts it in the recent files
-    recentFilesController()->recentFilesListChanged().onNotify(this, [this]() {
+    recentFilesController()->recentFilesListChanged().onReceive(this, [this](const RecentFilesChange&) {
         update();
     });
 }

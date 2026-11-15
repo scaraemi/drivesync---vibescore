@@ -29,7 +29,7 @@ class MuseScoreComConvertServiceStub : public IMuseScoreComConvertService
 {
 public:
     async::Promise<RetVal<ConvertConfig> > fetchConfig() override;
-    ProgressPtr startConvert(const ConvertUploadDataPtr& data) override;
+    ProgressPtr uploadToConvert(const ConvertUploadDataPtr& data) override;
     async::Promise<RetVal<ConvertQueueList> > fetchQueue() override;
     async::Promise<RetVal<ConvertResult> > submitReview(ConvertType type, int id, ReviewRating review, const QString& comment) override;
     async::Promise<Ret> submitReviewComment(ConvertType type, int id, const QString& comment) override;
@@ -55,6 +55,8 @@ public:
 
     async::Promise<ScoresList> downloadScoresList(int scoresPerBatch, int batchNumber) override;
     ProgressPtr downloadScore(int scoreId, DevicePtr scoreData, const QString& hash, const QString& secret) override;
+
+    async::Promise<Ret> deleteScore(int scoreId) override;
 
 private:
     IAuthorizationServicePtr m_authorization;
