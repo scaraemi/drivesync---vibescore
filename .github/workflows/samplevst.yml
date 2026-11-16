@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - 'services/samplevst/**'
+      - 'services/scoreconvert/scoreconvert/drive_worker.py'
       - '.github/workflows/samplevst.yml'
   workflow_dispatch:
 
@@ -36,7 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: services/samplevst
+          sparse-checkout: |
+            services/samplevst
+            services/scoreconvert/scoreconvert
 
       - name: VST 3 SDK
         run: git clone -q --depth 1 --branch "$VST3SDK_TAG" --recursive --shallow-submodules https://github.com/steinbergmedia/vst3sdk.git "$RUNNER_TEMP/vst3sdk"
