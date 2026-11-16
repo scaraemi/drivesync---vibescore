@@ -46,6 +46,7 @@ public:
     void loadSoundFonts() override;
 
     void addSoundFont(const synth::SoundFontUri& uri) override;
+    RetVal<io::path_t> installSoundFont(const io::path_t& src) override;
 
 private:
 

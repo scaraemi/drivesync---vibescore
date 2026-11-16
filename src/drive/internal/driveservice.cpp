@@ -128,6 +128,7 @@ void DriveService::init()
     if (dispatcher()) {
         dispatcher()->reg(this, "drive-save-to-drive", this, &DriveService::saveOpenScoreToDrive);
         dispatcher()->reg(this, "drive-convert-files", this, &DriveService::convertFiles);
+        dispatcher()->reg(this, "drive-make-instrument", [this]() { makeInstrument(); });
     }
 
     m_nam = new QNetworkAccessManager(this);
@@ -481,6 +482,11 @@ void DriveService::onFinished(const drivesync::SyncReport& report)
 
     if (m_syncAgain || !m_wanted.isEmpty()) {
         scheduleSync(0);
+    }
+
+    // Instruments made from samples, in the Drive folder "Strumenti" (every few minutes at most)
+    if (report.ok()) {
+        checkInstruments(false);
     }
 }
 
@@ -932,17 +938,20 @@ void DriveService::saveOpenScoreToDrive()
     }
     if (m_status.state == State::NotSignedIn || m_status.state == State::SigningIn || m_status.state == State::NoFolder) {
         interactive()->info(muse::trc("drive", "Save to Drive"),
-                            IInteractive::Text(muse::trc("drive", "Sign in and choose the Drive folder first, in the Drive tab of the Scores page.")));
+                            IInteractive::Text(muse::trc("drive",
+                                                         "Sign in and choose the Drive folder first, in the Drive tab of the Scores page.")));
         return;
     }
     if (project->isNewlyCreated() || project->isCloudProject() || project->path().empty()) {
         interactive()->info(muse::trc("drive", "Save to Drive"),
-                            IInteractive::Text(muse::trc("drive", "Save the score on this computer first (File > Save), then save it to Drive.")));
+                            IInteractive::Text(muse::trc("drive",
+                                                         "Save the score on this computer first (File > Save), then save it to Drive.")));
         return;
     }
     if (isInDrive(project->path())) {
         interactive()->info(muse::trc("drive", "Save to Drive"),
-                            IInteractive::Text(muse::trc("drive", "This score is already in the Drive folder: saving it updates it on Drive.")));
+                            IInteractive::Text(muse::trc("drive",
+                                                         "This score is already in the Drive folder: saving it updates it on Drive.")));
         return;
     }
 

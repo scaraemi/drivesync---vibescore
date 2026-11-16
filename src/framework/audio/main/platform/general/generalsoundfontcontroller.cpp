@@ -106,6 +106,25 @@ void GeneralSoundFontController::addSoundFont(const SoundFontUri& uri)
     });
 }
 
+RetVal<io::path_t> GeneralSoundFontController::installSoundFont(const io::path_t& src)
+{
+    // the user folder may not exist yet (a new installation)
+    for (const io::path_t& dir : configuration()->userSoundFontDirectories()) {
+        if (!fileSystem()->exists(dir)) {
+            fileSystem()->makePath(dir);
+        }
+    }
+    RetVal<io::path_t> dst = resolveInstallationPath(src);
+    if (!dst.ret) {
+        return dst;
+    }
+    Ret ret = doAddSoundFont(src, dst.val);
+    if (!ret) {
+        return RetVal<io::path_t>(ret);
+    }
+    return dst;
+}
+
 Ret GeneralSoundFontController::doAddSoundFont(const io::path_t& src, const io::path_t& dst)
 {
     Ret ret = fileSystem()->copy(src, dst, true /* replace */);

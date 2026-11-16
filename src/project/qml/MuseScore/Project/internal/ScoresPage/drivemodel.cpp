@@ -208,6 +208,13 @@ void DriveModel::convertFiles()
     }
 }
 
+void DriveModel::makeInstrument(const QString& name)
+{
+    if (driveService()) {
+        driveService()->makeInstrument(name);
+    }
+}
+
 void DriveModel::addFromComputer()
 {
     if (!driveService()) {

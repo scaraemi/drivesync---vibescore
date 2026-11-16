@@ -32,6 +32,7 @@ using namespace muse::actions;
 
 static const ActionCode SAVE_TO_DRIVE_CODE("drive-save-to-drive");
 static const ActionCode CONVERT_FILES_CODE("drive-convert-files");
+static const ActionCode MAKE_INSTRUMENT_CODE("drive-make-instrument");
 
 const UiActionList DriveUiActions::m_actions = {
     UiAction(SAVE_TO_DRIVE_CODE,
@@ -46,6 +47,12 @@ const UiActionList DriveUiActions::m_actions = {
              TranslatableString("action", "Convert to score (PDF, photo, audio)…"),
              TranslatableString("action", "Turn sheet music images and recordings into scores in the Drive folder")
              ),
+    UiAction(MAKE_INSTRUMENT_CODE,
+             mu::context::UiCtxAny,
+             mu::context::CTX_ANY,
+             TranslatableString("action", "Make instrument from samples…"),
+             TranslatableString("action", "Turn your own recordings into an instrument (SoundFont and VST3) played over MIDI")
+             ),
 };
 
 DriveUiActions::DriveUiActions(std::shared_ptr<DriveService> service, const modularity::ContextPtr& iocCtx)
@@ -55,7 +62,7 @@ DriveUiActions::DriveUiActions(std::shared_ptr<DriveService> service, const modu
 
 void DriveUiActions::init()
 {
-    auto update = [this]() { m_actionEnabledChanged.send({ SAVE_TO_DRIVE_CODE, CONVERT_FILES_CODE }); };
+    auto update = [this]() { m_actionEnabledChanged.send({ SAVE_TO_DRIVE_CODE, CONVERT_FILES_CODE, MAKE_INSTRUMENT_CODE }); };
     m_service->statusChanged().onNotify(this, update);
     if (globalContext()) {
         globalContext()->currentProjectChanged().onNotify(this, update);
@@ -69,7 +76,7 @@ const UiActionList& DriveUiActions::actionsList() const
 
 bool DriveUiActions::actionEnabled(const UiAction& act) const
 {
-    if (act.code == CONVERT_FILES_CODE) {
+    if (act.code == CONVERT_FILES_CODE || act.code == MAKE_INSTRUMENT_CODE) {
         // Not signed in yet: explained when it is chosen
         return m_service->isAvailable();
     }
