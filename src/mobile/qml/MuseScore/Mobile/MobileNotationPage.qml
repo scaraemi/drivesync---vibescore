@@ -56,7 +56,9 @@ Item {
 
     //! Phones: the score takes the whole screen (no system bars) while the page is shown; the system bars come
     //! back when the keyboard is needed, so that Android keeps the text being written above the keyboard
-    readonly property bool wantsFullScreen: root.isPhone && root.visible && !root.isEditingText && !Qt.inputMethod.visible
+    //! Off: on some devices Android recreates the window surface at each switch, and the app aborted in the
+    //! EGL swap right after (crash reports of 16 Nov). The lower bars below stay.
+    readonly property bool wantsFullScreen: false
     property int visibilityBeforeFullScreen: -1
 
     onWantsFullScreenChanged: Qt.callLater(root.applyFullScreen)
