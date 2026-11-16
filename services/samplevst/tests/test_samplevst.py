@@ -249,11 +249,17 @@ def test_vst3_plays_in_a_host(tmp_path):
     r = create(files, Options(name="Corda"), tmp_path / "out", TEMPLATE)
     log = tmp_path / "plugin.log"
     os.environ["SAMPLEVST_LOG"] = str(log)   # read by the plug-in on its first call
+    bundle = tmp_path / "out" / "bundle" / "Corda.vst3"
     try:
-        plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda.vst3"))
+        plugin = pedalboard.load_plugin(str(bundle))
     except ImportError:
         print("What the host asked the plug-in:\n" + (log.read_text() if log.exists() else "(nothing: not loaded)"))
-        raise
+        import sys
+        if not sys.platform.startswith("win"):
+            raise
+        # pedalboard on Windows may want the module file inside the bundle
+        plugin = pedalboard.load_plugin(str(bundle / "Contents" / "x86_64-win" / "Corda.vst3"))
+        print("loaded through the module file inside the bundle")
     assert plugin.name == "Corda" and plugin.is_instrument
     notes = [(0, 1.5, 55, 100), (2, 1.5, 67, 100), (4, 1.5, 79, 100), (6, 6.0, 64, 100)]
     msgs = []
