@@ -201,6 +201,13 @@ void DriveModel::copyToDrive(const QString& scorePath)
                         IInteractive::Text(muse::trc("project", "The score is in the Drive tab, and it is being uploaded.")));
 }
 
+void DriveModel::convertFiles()
+{
+    if (driveService()) {
+        driveService()->convertFiles();
+    }
+}
+
 void DriveModel::addFromComputer()
 {
     if (!driveService()) {

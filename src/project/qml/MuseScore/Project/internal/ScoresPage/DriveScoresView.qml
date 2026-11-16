@@ -124,6 +124,19 @@ Item {
                 onClicked: Qt.callLater(root.driveModel.addFromComputer)
             }
 
+            // PDF, photos, recordings -> scores: uploaded to the converter folder, back as .mscz in a few minutes
+            FlatButton {
+                visible: root.isReady
+                icon: IconCode.IMPORT
+                text: qsTrc("project", "Convert to score…")
+                orientation: Qt.Horizontal
+
+                navigation.panel: navPanel
+                navigation.column: 12
+
+                onClicked: Qt.callLater(root.driveModel.convertFiles)
+            }
+
             FlatButton {
                 visible: root.isReady
                 icon: IconCode.OPEN_FILE

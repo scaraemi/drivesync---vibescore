@@ -1,0 +1,11 @@
+basic-pitch[onnx]==0.4.0
+numpy==1.26.4
+librosa==0.11.0
+pretty_midi==0.2.11.post0
+opencv-python-headless==4.10.0.84
+music21==10.5.2
+anthropic==2.8.0
+fastapi==0.163.1
+uvicorn==0.54.0
+python-multipart==0.0.33
+pytest

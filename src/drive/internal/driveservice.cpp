@@ -127,6 +127,7 @@ void DriveService::init()
 {
     if (dispatcher()) {
         dispatcher()->reg(this, "drive-save-to-drive", this, &DriveService::saveOpenScoreToDrive);
+        dispatcher()->reg(this, "drive-convert-files", this, &DriveService::convertFiles);
     }
 
     m_nam = new QNetworkAccessManager(this);
@@ -837,6 +838,87 @@ RetVal<io::path_t> DriveService::copyToDrive(const io::path_t& scorePath, const 
     return RetVal<io::path_t>::make_ok(target);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// The score converter: files go to the Drive folder "Da convertire"; a GitHub Actions job converts them and puts the
+// .mscz in the Drive folder, where the next sync brings it to every device.
+
+void DriveService::convertFiles()
+{
+    const std::string title = muse::trc("drive", "Convert to score");
+    if (m_status.state == State::NotSignedIn || m_status.state == State::SigningIn || m_status.state == State::NoFolder) {
+        //: The score converter
+        const std::string text = muse::trc("drive",
+                                           "The converter works through Drive: sign in and choose the Drive folder first, in the Drive tab of the Scores page.");
+        interactive()->info(title, IInteractive::Text(text));
+        return;
+    }
+
+    // No name filter: Android would hide the files whose type it does not know
+    const io::paths_t paths = interactive()->selectOpeningFilesSync(
+        muse::trc("drive", "Files to convert: PDF, photos, recordings, MIDI, MusicXML…"), io::path_t(), {});
+    QStringList files;
+    for (const io::path_t& p : paths) {
+        files << p.toQString();
+    }
+    sendToConverter(files);
+}
+
+void DriveService::sendToConverter(const QStringList& files)
+{
+    if (files.isEmpty() || !m_client) {
+        return;
+    }
+    const QString root = folderId();
+    m_client->listChildren(root, [this, root, files](drivesync::Result<QList<drivesync::DriveFile> > list) {
+        if (!list.ok()) {
+            showError(muse::trc("drive", "The files were not sent to the converter"), list.error.toString());
+            return;
+        }
+        for (const drivesync::DriveFile& f : *list.value) {
+            if (f.isFolder() && !f.trashed && f.name == converterFolderName()) {
+                uploadToConverter(f.id, files, {}, {});
+                return;
+            }
+        }
+        m_client->createFolder(root, converterFolderName(), [this, files](drivesync::Result<drivesync::DriveFile> folder) {
+            if (!folder.ok()) {
+                showError(muse::trc("drive", "The files were not sent to the converter"), folder.error.toString());
+                return;
+            }
+            uploadToConverter(folder.value->id, files, {}, {});
+        });
+    });
+}
+
+void DriveService::uploadToConverter(const QString& inboxId, QStringList files, QStringList sent, QStringList failed)
+{
+    if (files.isEmpty()) {
+        if (!failed.isEmpty()) {
+            showError(muse::trc("drive", "Some files were not sent to the converter"), failed.join("\n"));
+        }
+        if (!sent.isEmpty()) {
+            //: %1 is a list of file names
+            const QString message = muse::qtrc("drive",
+                                               "Sent: %1.\n\nThe scores will appear in the Drive folder in about 10–20 minutes, with the same names and the .mscz extension. Results from photos, handwriting and recordings need checking: the notes about each one are in the file’s description on Drive.");
+            const QString text = message.arg(sent.join(", "));
+            interactive()->info(muse::trc("drive", "Sent to the converter"), IInteractive::Text(text.toStdString()));
+        }
+        return;
+    }
+
+    const QString path = files.takeFirst();
+    const QString name = QFileInfo(path).fileName();
+    m_client->createFile(inboxId, name, path,
+                         [this, inboxId, files, sent, failed, name](drivesync::Result<drivesync::DriveFile> result) mutable {
+        if (result.ok()) {
+            sent << name;
+        } else {
+            failed << name + ": " + result.error.toString();
+        }
+        uploadToConverter(inboxId, files, sent, failed);
+    });
+}
+
 bool DriveService::isInDrive(const io::path_t& path) const
 {
     return !relPathOf(path).isEmpty();
@@ -884,7 +966,7 @@ void DriveService::saveOpenScoreToDrive()
     open.role = IInteractive::ButtonRole::AcceptRole;
 
     //: %1 is the file name
-    const QString text = muse::qtrc("drive", "Saved to Drive as \"%1\", and being uploaded. The score open here is still "
+    const QString text = muse::qtrc("drive", "Saved to Drive as “%1”, and being uploaded. The score open here is still "
                                              "the one on this computer: open the Drive copy to work on the shared one.")
                          .arg(QFileInfo(copy.val.toQString()).fileName());
     interactive()->question(muse::trc("drive", "Saved to Drive"), IInteractive::Text(text.toStdString()), { keep, open }, open.btn)
