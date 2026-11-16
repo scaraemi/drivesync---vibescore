@@ -18,6 +18,7 @@
  */
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include <QHash>
@@ -36,6 +37,10 @@
 #include "global/io/ifilesystem.h"
 #include "global/progress.h"
 #include "project/iprojectconfiguration.h"
+#include "audio/main/isoundfontcontroller.h"
+#ifdef MUSE_MODULE_AUDIOPLUGINS
+#include "audioplugins/iregisteraudiopluginsscenario.h"
+#endif
 
 #include "../idriveservice.h"
 #include "heartbeatfile.h"
@@ -63,6 +68,10 @@ class DriveService : public QObject, public IDriveService, public muse::Contexta
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
+    muse::ContextInject<muse::audio::ISoundFontController> soundFontController = { this };
+#ifdef MUSE_MODULE_AUDIOPLUGINS
+    muse::ContextInject<muse::audioplugins::IRegisterAudioPluginsScenario> registerAudioPluginsScenario = { this };
+#endif
 
 public:
     explicit DriveService(const muse::modularity::ContextPtr& iocCtx);
@@ -102,6 +111,10 @@ public:
     void checkForUpdates(bool userAsked) override;
 
     muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath, const QString& folderRelPath = QString()) override;
+    void convertFiles() override;
+    void makeInstrument(const QString& name = QString()) override;
+    //! Uploads the files to the converter folder on Drive (created if missing), one after the other
+    void sendToConverter(const QStringList& files);
 
     //! The score is in the Drive folder
     bool isInDrive(const muse::io::path_t& path) const;
@@ -110,7 +123,33 @@ public:
 
     static QString folderIdFromLink(const QString& linkOrId);
 
+    //! "violino_A4.wav", "violino_C5.wav" -> "Violino"
+    static QString instrumentNameFromFiles(const QStringList& files);
+
 private:
+    // Instruments made from samples (driveservice_instruments.cpp)
+    void withFolder(const QString& parentId, const QString& name, std::function<void(const QString& id, const QString& error)> done);
+    void uploadFiles(const QString& folderId, QStringList files, QStringList sent, QStringList failed,
+                     std::function<void(const QStringList& sent, const QStringList& failed)> done);
+    void checkInstruments(bool force);
+    void installNextInstrument();
+    bool installInstrument(const QString& name, const QString& downloaded, QString& error);
+    bool installVst3(const QString& zipPath, QString& bundlePath, QString& error);
+
+    struct InstrumentFile {
+        QString id;
+        QString name;
+        QString md5;
+    };
+    QList<InstrumentFile> m_instrumentQueue;
+    QStringList m_instrumentsInstalled;   // names, for the message at the end
+    QStringList m_instrumentsFailed;
+    QStringList m_newVst3Bundles;         // to be registered with the app's plugin list
+    bool m_instrumentsBusy = false;
+    QDateTime m_instrumentsChecked;
+
+    void uploadToConverter(const QString& inboxId, QStringList files, QStringList sent, QStringList failed);
+
     struct OpenScore {
         QString relPath;           // empty: the open score is not in the Drive folder
         QString fileId;            // empty: not on Drive yet

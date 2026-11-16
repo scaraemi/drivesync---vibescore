@@ -75,6 +75,10 @@ public:
     Q_INVOKABLE void copyToDrive(const QString& scorePath);
     //! Scores of this computer, copied into the folder shown
     Q_INVOKABLE void addFromComputer();
+    //! PDF, photos, recordings... -> scores, through the converter folder on Drive
+    Q_INVOKABLE void convertFiles();
+    //! Samples -> an instrument (SoundFont, VST3), through the instrument folder on Drive
+    Q_INVOKABLE void makeInstrument(const QString& name);
 
     QString currentFolder() const;
     QString currentFolderName() const;

@@ -129,7 +129,20 @@ public:
 
     //! Copies a score (of the library, or any on this computer) into the Drive folder, or one of its folders
     //! ("" = the Drive folder itself), then syncs. Returns the copy.
-    virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath,
-                                                       const QString& folderRelPath = QString()) = 0;
+    virtual muse::RetVal<muse::io::path_t> copyToDrive(const muse::io::path_t& scorePath, const QString& folderRelPath = QString()) = 0;
+
+    //! The Drive subfolder the score converter reads: PDFs, photos, recordings put there come back as .mscz
+    //! scores in the Drive folder (services/scoreconvert, run by GitHub Actions every few minutes)
+    static QString converterFolderName() { return QStringLiteral("Da convertire"); }
+    //! Asks for files (PDF, photos, recordings, MIDI, MusicXML...) and uploads them to the converter folder
+    virtual void convertFiles() = 0;
+
+    //! Instruments made from samples (services/samplevst, run by GitHub Actions): the samples go to the Drive
+    //! folder "Nuovo strumento", the instruments come back in "Strumenti" as a SoundFont and a VST3, and every
+    //! device installs them (SoundFont everywhere, VST3 on computers)
+    static QString instrumentRequestsFolderName() { return QStringLiteral("Nuovo strumento"); }
+    static QString instrumentsFolderName() { return QStringLiteral("Strumenti"); }
+    //! Asks for samples and sends them; an empty name is made from the file names
+    virtual void makeInstrument(const QString& name = QString()) = 0;
 };
 }

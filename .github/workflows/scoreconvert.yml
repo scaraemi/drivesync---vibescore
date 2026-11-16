@@ -1,0 +1,74 @@
+name: 'Scoreconvert: build and test'
+
+on:
+  push:
+    paths:
+      - 'services/scoreconvert/**'
+      - '.github/workflows/scoreconvert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: services/scoreconvert
+
+      - name: Build the image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          aud=$(gh api repos/Audiveris/audiveris/releases/tags/5.10.2 --jq '.assets[].browser_download_url' | grep -E 'ubuntu22.*x86_64\.deb$' | head -1)
+          ms=$(gh api repos/musescore/MuseScore/releases/latest --jq '.assets[].browser_download_url' | grep -E 'x86_64\.AppImage$' | head -1)
+          echo "Audiveris: $aud"; echo "MuseScore: $ms"
+          docker build -t scoreconvert --build-arg AUDIVERIS_URL="$aud" --build-arg MUSESCORE_URL="$ms" services/scoreconvert
+
+      - name: Tool check
+        run: |
+          docker run --rm scoreconvert sh -c 'audiveris -help 2>&1 | head -3; mscore --long-version 2>&1 | tail -5;
+            python -c "import pretty_midi as p; m=p.PrettyMIDI(); i=p.Instrument(0); i.notes=[p.Note(velocity=90,pitch=60,start=0,end=1)]; m.instruments.append(i); m.write(\"/tmp/c.mid\")";
+            mscore -o /tmp/c.mscz /tmp/c.mid 2>&1 | tail -25; ls -la /tmp/c.mscz'
+
+      - name: Tests (audio, OMR on PDF and photo, notation import)
+        run: |
+          mkdir -p testout && chmod 777 testout
+          docker run --rm -v "$PWD/testout:/out" scoreconvert python -m pytest -q -s -p no:cacheprovider --basetemp=/out/t tests
+
+      - name: Make the test files readable
+        if: always()
+        run: sudo chown -R "$USER" testout || true
+
+      - name: Keep the test files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoreconvert-tests
+          path: testout
+          retention-days: 7
+
+      - name: Service smoke test
+        run: |
+          docker run -d --name sc -p 8080:8080 -e SCORECONVERT_TOKENS=ci scoreconvert
+          for i in $(seq 1 30); do curl -fs localhost:8080/healthz && break; sleep 2; done
+          docker exec sc sh -c 'python -c "
+          import pretty_midi; pm=pretty_midi.PrettyMIDI(); i=pretty_midi.Instrument(0)
+          i.notes=[pretty_midi.Note(velocity=90,pitch=60+k,start=k*.5,end=k*.5+.45) for k in range(8)]
+          pm.instruments.append(i); pm.write(\"/tmp/s.mid\")"'
+          docker cp sc:/tmp/s.mid s.mid
+          id=$(curl -fs -H 'Authorization: Bearer ci' -F file=@s.mid localhost:8080/v1/jobs | jq -r .id)
+          for i in $(seq 1 30); do st=$(curl -fs -H 'Authorization: Bearer ci' localhost:8080/v1/jobs/$id | jq -r .state); [ "$st" = done ] && break; sleep 2; done
+          echo "state: $st"; test "$st" = done
+          curl -fs -H 'Authorization: Bearer ci' -o s.mscz localhost:8080/v1/jobs/$id/score && unzip -l s.mscz
+
+      - name: Publish to ghcr.io
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          img=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/scoreconvert
+          docker tag scoreconvert $img:latest && docker tag scoreconvert $img:${GITHUB_SHA::7}
+          docker push $img:latest && docker push $img:${GITHUB_SHA::7}

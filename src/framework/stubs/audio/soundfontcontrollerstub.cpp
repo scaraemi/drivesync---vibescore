@@ -31,3 +31,8 @@ void SoundFontControllerStub::loadSoundFonts()
 void SoundFontControllerStub::addSoundFont(const synth::SoundFontUri&)
 {
 }
+
+RetVal<io::path_t> SoundFontControllerStub::installSoundFont(const io::path_t&)
+{
+    return RetVal<io::path_t>(make_ret(Ret::Code::NotSupported));
+}

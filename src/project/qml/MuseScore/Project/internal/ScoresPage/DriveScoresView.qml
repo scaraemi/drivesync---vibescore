@@ -124,6 +124,19 @@ Item {
                 onClicked: Qt.callLater(root.driveModel.addFromComputer)
             }
 
+            // PDF, photos, recordings -> scores: uploaded to the converter folder, back as .mscz in a few minutes
+            FlatButton {
+                visible: root.isReady
+                icon: IconCode.IMPORT
+                text: qsTrc("project", "Convert to score…")
+                orientation: Qt.Horizontal
+
+                navigation.panel: navPanel
+                navigation.column: 12
+
+                onClicked: Qt.callLater(root.driveModel.convertFiles)
+            }
+
             FlatButton {
                 visible: root.isReady
                 icon: IconCode.OPEN_FILE
@@ -143,6 +156,9 @@ Item {
                 menuModel: {
                     let items = []
                     if (root.state_ !== "notSignedIn" && root.state_ !== "signingIn") {
+                        if (root.isReady) {
+                            items.push({ id: "instrument", title: qsTrc("project", "Make instrument from samples…") })
+                        }
                         items.push({ id: "folder", title: qsTrc("project", "Change Drive folder…") })
                         items.push({ id: "signOut", title: qsTrc("project", "Sign out of Google") })
                     }
@@ -152,7 +168,9 @@ Item {
                 }
 
                 onHandleMenuItem: function(itemId) {
-                    if (itemId === "folder") {
+                    if (itemId === "instrument") {
+                        editRow.start("instrument", "", "")
+                    } else if (itemId === "folder") {
                         folderField.currentText = ""
                         folderRow.link = ""
                         folderRow.forceShown = true
@@ -226,7 +244,7 @@ Item {
         RowLayout {
             id: editRow
 
-            property string mode: ""   // "newFolder", "rename", "move"
+            property string mode: ""   // "newFolder", "rename", "move", "instrument"
             property string path: ""
             property string text: ""
             property var targets: []
@@ -250,6 +268,9 @@ Item {
                     root.driveModel.rename(path, text)
                 } else if (mode === "move" && targetDropdown.currentIndex >= 0) {
                     root.driveModel.move(path, targetDropdown.currentValue)
+                } else if (mode === "instrument") {
+                    // then the samples are chosen; an empty name is made from their file names
+                    Qt.callLater(root.driveModel.makeInstrument, text.trim())
                 }
                 mode = ""
             }
@@ -261,6 +282,7 @@ Item {
             StyledTextLabel {
                 text: editRow.mode === "newFolder" ? qsTrc("project", "New folder:")
                       : editRow.mode === "rename" ? qsTrc("project", "New name:")
+                      : editRow.mode === "instrument" ? qsTrc("project", "Instrument name:")
                       : qsTrc("project", "Move to:")
             }
 
@@ -268,7 +290,8 @@ Item {
                 id: nameField
 
                 Layout.fillWidth: true
-                visible: editRow.mode === "newFolder" || editRow.mode === "rename"
+                visible: editRow.mode === "newFolder" || editRow.mode === "rename" || editRow.mode === "instrument"
+                hint: editRow.mode === "instrument" ? qsTrc("project", "From the file names if empty") : ""
 
                 navigation.panel: navPanel
                 navigation.column: 9
@@ -295,9 +318,10 @@ Item {
             }
 
             FlatButton {
-                text: qsTrc("global", "OK")
                 accentButton: true
-                enabled: editRow.mode === "move" ? targetDropdown.currentIndex >= 0 : editRow.text.trim() !== ""
+                text: editRow.mode === "instrument" ? qsTrc("project", "Choose samples…") : qsTrc("global", "OK")
+                enabled: editRow.mode === "move" ? targetDropdown.currentIndex >= 0
+                         : editRow.mode === "instrument" || editRow.text.trim() !== ""
 
                 navigation.panel: navPanel
                 navigation.column: 10

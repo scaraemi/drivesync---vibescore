@@ -1,0 +1,55 @@
+name: 'Samplevst: Drive'
+
+# Makes the instruments asked for in the Drive folder "Nuovo strumento" (samples from the apps) and puts them,
+# as a SoundFont and a VST3, in the Drive folder "Strumenti", where the apps install them from. GitHub runs
+# schedules only on the default branch, every 10 minutes at best and often later; "Run workflow" starts right away.
+#
+# Secrets: the same as 'Scoreconvert: Drive' (VS_DRIVE_CLIENT_ID, VS_DRIVE_CLIENT_SECRET, VS_DRIVE_FOLDER_ID,
+# SCORECONVERT_REFRESH_TOKEN). The plugin comes from the release "samplevst-plugin" ('Samplevst: plugin and tests').
+
+on:
+  schedule:
+    - cron: '5-59/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: samplevst-drive
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  make:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOOGLE_CLIENT_ID: ${{ secrets.VS_DRIVE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.VS_DRIVE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.SCORECONVERT_REFRESH_TOKEN }}
+      DRIVE_FOLDER_ID: ${{ secrets.VS_DRIVE_FOLDER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            services/samplevst
+            services/scoreconvert/scoreconvert
+
+      - name: Anything to make?
+        id: check
+        run: python3 services/samplevst/samplevst/drive_worker.py --check
+
+      - name: Make the instruments
+        if: steps.check.outputs.pending != '0' && steps.check.outputs.pending != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get install -y -q ffmpeg >/dev/null 2>&1 || true
+          pip install -q -r services/samplevst/requirements.txt
+          if gh release download samplevst-plugin -R "$GITHUB_REPOSITORY" -p SampleVST.vst3.zip -D "$RUNNER_TEMP"; then
+            unzip -q "$RUNNER_TEMP/SampleVST.vst3.zip" -d "$RUNNER_TEMP"
+            export SAMPLEVST_TEMPLATE="$RUNNER_TEMP/SampleVST.vst3"
+          else
+            echo "::warning::No release samplevst-plugin yet: SoundFonts only. Run 'Samplevst: plugin and tests'."
+          fi
+          cd services/samplevst && python3 -m samplevst.drive_worker
