@@ -22,6 +22,7 @@ Processor::Processor()
 tresult PLUGIN_API Processor::initialize(FUnknown* context)
 {
     tresult r = AudioEffect::initialize(context);
+    trace("processor initialize", long(r));
     if (r != kResultOk) {
         return r;
     }
@@ -38,6 +39,8 @@ tresult PLUGIN_API Processor::initialize(FUnknown* context)
 tresult PLUGIN_API Processor::setBusArrangements(SpeakerArrangement*, int32 numIns, SpeakerArrangement* outputs,
                                                  int32 numOuts)
 {
+    trace("setBusArrangements ins", long(numIns));
+    trace("setBusArrangements outs", long(numOuts));
     if (numIns == 0 && numOuts == 1 && outputs[0] == SpeakerArr::kStereo) {
         return AudioEffect::setBusArrangements(nullptr, 0, outputs, numOuts);
     }
@@ -46,11 +49,15 @@ tresult PLUGIN_API Processor::setBusArrangements(SpeakerArrangement*, int32 numI
 
 tresult PLUGIN_API Processor::canProcessSampleSize(int32 size)
 {
+    trace("canProcessSampleSize", long(size));
     return size == kSample32 || size == kSample64 ? kResultTrue : kResultFalse;
 }
 
 tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup)
 {
+    trace("setupProcessing rate", long(setup.sampleRate));
+    trace("setupProcessing block", long(setup.maxSamplesPerBlock));
+    trace("setupProcessing size", long(setup.symbolicSampleSize));
     m_sampler.setRate(setup.sampleRate);
     m_scratchL.assign(size_t(std::max<int32>(setup.maxSamplesPerBlock, 1)), 0.f);
     m_scratchR.assign(m_scratchL.size(), 0.f);
@@ -59,6 +66,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup)
 
 tresult PLUGIN_API Processor::setActive(TBool state)
 {
+    trace("setActive", long(state));
     if (!state) {
         m_sampler.allOff(true);
     }

@@ -247,7 +247,13 @@ def test_vst3_plays_in_a_host(tmp_path):
     pedalboard = pytest.importorskip("pedalboard")
     files = [write(tmp_path / "corda_C4.wav", bowed(hz(60), 1.5)), write(tmp_path / "corda_C5.wav", bowed(hz(72), 1.5))]
     r = create(files, Options(name="Corda"), tmp_path / "out", TEMPLATE)
-    plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda.vst3"))
+    log = tmp_path / "plugin.log"
+    os.environ["SAMPLEVST_LOG"] = str(log)   # read by the plug-in on its first call
+    try:
+        plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda.vst3"))
+    except ImportError:
+        print("What the host asked the plug-in:\n" + (log.read_text() if log.exists() else "(nothing: not loaded)"))
+        raise
     assert plugin.name == "Corda" and plugin.is_instrument
     notes = [(0, 1.5, 55, 100), (2, 1.5, 67, 100), (4, 1.5, 79, 100), (6, 6.0, 64, 100)]
     msgs = []

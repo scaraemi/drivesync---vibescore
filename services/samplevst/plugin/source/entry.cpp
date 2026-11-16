@@ -106,12 +106,14 @@ public:
             return kInvalidArgument;
         }
         *info = unicode[index];
+        samplevst::trace("getClassInfoUnicode", long(index));
         return kResultOk;
     }
 };
 
 SMTG_EXPORT_SYMBOL IPluginFactory* PLUGIN_API GetPluginFactory()
 {
+    samplevst::trace("GetPluginFactory");
     if (gPluginFactory) {
         gPluginFactory->addRef();
         return gPluginFactory;

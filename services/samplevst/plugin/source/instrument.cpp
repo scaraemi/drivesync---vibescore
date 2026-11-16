@@ -1,9 +1,12 @@
 #include "instrument.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <string>
 
 #if defined(_WIN32)
 #define NOMINMAX
@@ -210,6 +213,20 @@ std::shared_ptr<Instrument> load(bool withSamples)
 }
 }
 
+void trace(const char* what, long value)
+{
+    static const char* file = std::getenv("SAMPLEVST_LOG");
+    if (!file || !*file) {
+        return;
+    }
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (FILE* f = std::fopen(file, "a")) {
+        std::fprintf(f, "%s %ld\n", what, value);
+        std::fclose(f);
+    }
+}
+
 fs::path resourcesFolder()
 {
     // Windows: X.vst3/Contents/x86_64-win/X.vst3   macOS: X.vst3/Contents/MacOS/X   Linux: X.vst3/Contents/x86_64-linux/X.so
@@ -233,6 +250,8 @@ std::shared_ptr<const Instrument> instrument()
         return inst;
     }
     std::shared_ptr<const Instrument> inst = load(true);
+    trace(("instrument loaded: " + std::to_string(inst->samples.size()) + " samples, " + std::to_string(inst->zones.size())
+           + " zones " + inst->error).c_str());
     cached = inst;
     return inst;
 }

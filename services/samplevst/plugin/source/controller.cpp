@@ -53,6 +53,7 @@ private:
 tresult PLUGIN_API Controller::initialize(FUnknown* context)
 {
     tresult r = EditController::initialize(context);
+    trace("controller initialize", long(r));
     if (r != kResultOk) {
         return r;
     }

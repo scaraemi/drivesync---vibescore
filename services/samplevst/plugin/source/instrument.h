@@ -52,6 +52,9 @@ std::shared_ptr<const Instrument> instrumentHeader();
 //! Everything, samples included; loaded once and shared by every instance of the plugin
 std::shared_ptr<const Instrument> instrument();
 
+//! SAMPLEVST_LOG=<file>: what the host asks, one line per call (for hosts that refuse the plug-in silently)
+void trace(const char* what, long value = 0);
+
 //! The template bundle's own ID, used when there is no instrument.txt
 constexpr std::array<uint8_t, 16> kTemplateUid { 0x5A, 0x4D, 0x50, 0x4C, 0x45, 0x56, 0x53, 0x54,
                                                  0x8E, 0x21, 0x4B, 0x0C, 0x9D, 0x77, 0x13, 0x01 };
