@@ -246,10 +246,9 @@ def test_vst3_passes_the_steinberg_validator(tmp_path):
 def test_vst3_plays_in_a_host(tmp_path):
     pedalboard = pytest.importorskip("pedalboard")
     files = [write(tmp_path / "corda_C4.wav", bowed(hz(60), 1.5)), write(tmp_path / "corda_C5.wav", bowed(hz(72), 1.5))]
-    # an accented name: the module finds its bundle through a non-ASCII path (wide APIs on Windows)
-    r = create(files, Options(name="Corda à"), tmp_path / "out", TEMPLATE)
-    plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda à.vst3"))
-    assert plugin.name == "Corda à" and plugin.is_instrument
+    r = create(files, Options(name="Corda"), tmp_path / "out", TEMPLATE)
+    plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda.vst3"))
+    assert plugin.name == "Corda" and plugin.is_instrument
     notes = [(0, 1.5, 55, 100), (2, 1.5, 67, 100), (4, 1.5, 79, 100), (6, 6.0, 64, 100)]
     msgs = []
     for s, d, k, v in notes:
@@ -259,3 +258,49 @@ def test_vst3_plays_in_a_host(tmp_path):
         assert abs(pitch_at(x, s + 0.3, s + 1.2, 48000) - k) < 0.1, k
     assert level_at(x, 11.5, 48000) > level_at(x, 6.5, 48000) - 6, "held note keeps sounding (loop)"
     assert level_at(x, 13.3, 48000) < -80, "and stops after the release"
+
+
+@needs_vst
+def test_vst3_module_finds_its_bundle_on_a_non_ascii_path(tmp_path):
+    """Loads the module itself (no host in between) from "Più è.vst3" in a folder "Città": its factory must
+    report the instrument's name, read from Resources/instrument.txt next to it (wide APIs on Windows)."""
+    import ctypes
+    import sys
+
+    r = create([write(tmp_path / "s.wav", bowed(hz(60), 1.0))], Options(name="Più è"), tmp_path / "Città", TEMPLATE)
+    contents = tmp_path / "Città" / "bundle" / "Più è.vst3" / "Contents"
+    if sys.platform.startswith("win"):
+        module = contents / "x86_64-win" / "Più è.vst3"
+    elif sys.platform == "darwin":
+        module = contents / "MacOS" / "Più è"
+    else:
+        module = contents / "x86_64-linux" / "Più è.so"
+    lib = ctypes.CDLL(str(module))
+    if not sys.platform.startswith("win"):
+        entry = getattr(lib, "bundleEntry" if sys.platform == "darwin" else "ModuleEntry")
+        entry.restype = ctypes.c_bool
+        entry.argtypes = [ctypes.c_void_p]
+        assert entry(None)
+    lib.GetPluginFactory.restype = ctypes.c_void_p
+    factory = lib.GetPluginFactory()
+    assert factory
+
+    # IPluginFactory vtable: queryInterface, addRef, release, getFactoryInfo, countClasses, getClassInfo, ...
+    vtable = ctypes.cast(ctypes.cast(factory, ctypes.POINTER(ctypes.c_void_p))[0], ctypes.POINTER(ctypes.c_void_p))
+    proto = ctypes.WINFUNCTYPE if sys.platform.startswith("win") else ctypes.CFUNCTYPE
+
+    class PClassInfo(ctypes.Structure):
+        _fields_ = [("cid", ctypes.c_ubyte * 16), ("cardinality", ctypes.c_int32), ("category", ctypes.c_char * 32),
+                    ("name", ctypes.c_char * 64)]
+
+    count = proto(ctypes.c_int32, ctypes.c_void_p)(vtable[4])(factory)
+    get_info = proto(ctypes.c_int32, ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(PClassInfo))(vtable[5])
+    infos = []
+    for i in range(count):
+        info = PClassInfo()
+        assert get_info(factory, i, ctypes.byref(info)) == 0
+        infos.append((info.category.decode(), info.name.decode("utf-8"), bytes(info.cid).hex().upper()))
+    processor = [i for i in infos if i[0] == "Audio Module Class"]
+    assert [p[1] for p in processor] == ["Più è"], infos
+    if not sys.platform.startswith("win"):   # Windows stores the class ID in COM's byte order
+        assert processor[0][2] == r.instrument.uid
