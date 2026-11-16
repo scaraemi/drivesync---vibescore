@@ -57,8 +57,9 @@ jobs:
           cmake --build build --config Release --parallel --target SampleVST validator
           bundle=$(find build/VST3 -maxdepth 2 -name SampleVST.vst3 -type d | head -1)
           validator=$(find build/bin -name 'validator*' -type f | grep -v '\.pdb$' | head -1)
-          echo "BUNDLE=$PWD/$bundle" >> "$GITHUB_ENV"
-          echo "VALIDATOR=$PWD/$validator" >> "$GITHUB_ENV"
+          native() { if [ "$RUNNER_OS" = Windows ]; then cygpath -w "$1"; else echo "$1"; fi; }   # upload-artifact wants D:\...
+          echo "BUNDLE=$(native "$PWD/$bundle")" >> "$GITHUB_ENV"
+          echo "VALIDATOR=$(native "$PWD/$validator")" >> "$GITHUB_ENV"
           find "$bundle" | sort
           [ "$RUNNER_OS" = macOS ] && lipo -info "$bundle/Contents/MacOS/SampleVST" || true
 
@@ -76,6 +77,7 @@ jobs:
         with:
           name: bundle-${{ matrix.arch }}
           path: ${{ env.BUNDLE }}
+          if-no-files-found: error
           retention-days: 7
 
   merge:
