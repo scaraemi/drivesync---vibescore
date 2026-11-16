@@ -229,7 +229,8 @@ def test_vst3_bundle(tmp_path):
     txt = (tmp_path / "out" / "bundle" / "Corno è.vst3" / "Contents" / "Resources" / "instrument.txt").read_text("utf-8")
     assert f"uid {r.instrument.uid}" in txt and "name Corno è" in txt
     for arch in (tmp_path / "out" / "bundle" / "Corno è.vst3" / "Contents").iterdir():
-        assert not any(f.stem == "SampleVST" for f in arch.iterdir()), "the module is renamed like the bundle"
+        if arch.is_dir():
+            assert not any(f.stem == "SampleVST" for f in arch.iterdir()), "the module is renamed like the bundle"
 
 
 @needs_vst
