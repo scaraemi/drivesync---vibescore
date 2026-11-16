@@ -18,6 +18,11 @@
  */
 #include "crashhandler.h"
 
+#include <algorithm>
+#include <cstring>
+
+#include <QtGlobal>
+
 #include <QDateTime>
 #include <QDir>
 
@@ -48,6 +53,25 @@
 #endif
 
 using namespace mu::drive;
+
+namespace {
+//! The text of a Qt fatal error (qFatal), which ends in abort(): written into the crash report
+char s_fatalMessage[600];
+QtMessageHandler s_previousMessageHandler = nullptr;
+
+void onQtMessage(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+    if (type == QtFatalMsg) {
+        const QByteArray text = message.toUtf8();
+        const size_t n = std::min(size_t(text.size()), sizeof(s_fatalMessage) - 1);
+        memcpy(s_fatalMessage, text.constData(), n);
+        s_fatalMessage[n] = 0;
+    }
+    if (s_previousMessageHandler) {
+        s_previousMessageHandler(type, context, message);
+    }
+}
+}
 
 #ifdef VS_CRASH_HANDLER
 namespace {
@@ -117,6 +141,10 @@ void onCrash(int sig, siginfo_t* info, void* context)
         writeHex(fd, info ? uintptr_t(info->si_addr) : 0);
         writeStr(fd, "\nthread ");
         writeInt(fd, long(gettid()));
+        if (s_fatalMessage[0]) {
+            writeStr(fd, "\nQt fatal: ");
+            writeStr(fd, s_fatalMessage);
+        }
         writeStr(fd, "\n\nstack (library + offset, symbol if exported):\n");
 
         Trace trace;
@@ -193,6 +221,11 @@ void writeReport(const char* what, uintptr_t code, uintptr_t address)
     snprintf(line, sizeof(line), "%s, code 0x%llx, address 0x%llx\nthread %lu\n\nstack (module + offset):\n", what,
              (unsigned long long)code, (unsigned long long)address, GetCurrentThreadId());
     writeStr(file, line);
+    if (s_fatalMessage[0]) {
+        writeStr(file, "Qt fatal: ");
+        writeStr(file, s_fatalMessage);
+        writeStr(file, "\n\n");
+    }
 
     void* frames[62];
     const USHORT count = RtlCaptureStackBackTrace(0, 62, frames, nullptr);
@@ -233,6 +266,8 @@ void onAbort(int)
 
 void CrashHandler::install(const QString& logsDir)
 {
+    s_previousMessageHandler = qInstallMessageHandler(onQtMessage);
+
 #ifdef VS_CRASH_HANDLER
     QDir().mkpath(logsDir);
     const QByteArray path = (logsDir + "/crash_" + QDateTime::currentDateTime().toString("yyMMdd_HHmmss") + ".txt").toUtf8();

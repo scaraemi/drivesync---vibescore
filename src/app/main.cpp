@@ -25,6 +25,7 @@
 #include <QApplication>
 #include <QStyleHints>
 #include <QQuickWindow>
+#include <QSurfaceFormat>
 #include <QSettings>
 #ifndef Q_OS_WASM
 #include <QSslSocket>
@@ -163,6 +164,21 @@ int main(int argc, char** argv)
 #define MUSE_APP_INSTALL_SUFFIX ""
 #endif
     QGuiApplication::setDesktopFileName("org.musescore.MuseScore" MUSE_APP_INSTALL_SUFFIX);
+#endif
+
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    // Every window with the same 8-bit RGBA format. The QML windows ask for an alpha buffer (setDefaultAlphaBuffer
+    // in GuiApp); windows created later without one (the widget dialogs such as Customize kit, the drag image)
+    // could get an EGL config that does not match their Android surface on some devices: the app then aborted in
+    // eglCreateWindowSurface ("Could not create the egl surface").
+    {
+        QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+        format.setRedBufferSize(8);
+        format.setGreenBufferSize(8);
+        format.setBlueBufferSize(8);
+        format.setAlphaBufferSize(8);
+        QSurfaceFormat::setDefaultFormat(format);
+    }
 #endif
 
     using namespace muse;
