@@ -6,7 +6,7 @@
 # The bundle is build/VST3/Release/SampleVST.vst3. CI (.github/workflows/samplevst.yml) builds it for Windows,
 # macOS and Linux and merges the three into one bundle.
 cmake_minimum_required(VERSION 3.25)
-set(CMAKE_OSX_DEPLOYMENT_TARGET 10.13 CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15 CACHE STRING "")   # std::filesystem; MuseScore 4 needs 10.15 too
 
 if(NOT vst3sdk_SOURCE_DIR)
     message(FATAL_ERROR "Set vst3sdk_SOURCE_DIR to the VST 3 SDK (https://github.com/steinbergmedia/vst3sdk, MIT)")
