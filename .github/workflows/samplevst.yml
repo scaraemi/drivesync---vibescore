@@ -84,6 +84,13 @@ jobs:
     needs: plugin
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            services/samplevst
+            services/scoreconvert/scoreconvert
+          path: src
+
       - uses: actions/download-artifact@v4
         with:
           pattern: bundle-*
@@ -99,6 +106,26 @@ jobs:
             test -f "SampleVST.vst3/Contents/$a" || { echo "missing $a"; exit 1; }
           done
           zip -qr -X SampleVST.vst3.zip SampleVST.vst3
+
+      - name: An instrument made from the merged bundle loads (Linux part) and has every module
+        run: |
+          pip install -q --break-system-packages -r src/services/samplevst/requirements-test.txt
+          python3 - <<'PY'
+          import sys, zipfile, numpy as np, soundfile as sf, pedalboard
+          from pathlib import Path
+          sys.path.insert(0, "src/services/samplevst")
+          from samplevst.pipeline import create
+          from samplevst.instrument import Options
+          t = np.arange(44100) / 44100
+          sf.write("prova_A4.wav", 0.3 * np.sin(2 * np.pi * 440 * t), 44100)
+          r = create([Path("prova_A4.wav")], Options(name="Prova"), Path("out"), Path("SampleVST.vst3"))
+          names = zipfile.ZipFile(r.vst3_zip).namelist()
+          for m in ("x86_64-win/Prova.vst3", "MacOS/Prova", "x86_64-linux/Prova.so", "Info.plist", "Resources/instrument.txt"):
+              assert f"Prova.vst3/Contents/{m}" in names, m
+          p = pedalboard.load_plugin("out/bundle/Prova.vst3")
+          assert p.name == "Prova" and p.is_instrument
+          print("ok:", sorted(n for n in names if "/samples/" not in n))
+          PY
 
       - uses: actions/upload-artifact@v4
         with:
