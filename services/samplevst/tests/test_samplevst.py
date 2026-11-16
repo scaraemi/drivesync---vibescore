@@ -245,13 +245,11 @@ def test_vst3_passes_the_steinberg_validator(tmp_path):
 @pytest.mark.skipif(mido is None, reason="mido not installed")
 def test_vst3_plays_in_a_host(tmp_path):
     pedalboard = pytest.importorskip("pedalboard")
-    import sys
-    if not sys.platform.startswith("linux") and not sys.platform.startswith(("win", "darwin")):
-        pytest.skip("no host")
     files = [write(tmp_path / "corda_C4.wav", bowed(hz(60), 1.5)), write(tmp_path / "corda_C5.wav", bowed(hz(72), 1.5))]
-    r = create(files, Options(name="Corda"), tmp_path / "out", TEMPLATE)
-    plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda.vst3"))
-    assert plugin.name == "Corda" and plugin.is_instrument
+    # an accented name: the module finds its bundle through a non-ASCII path (wide APIs on Windows)
+    r = create(files, Options(name="Corda à"), tmp_path / "out", TEMPLATE)
+    plugin = pedalboard.load_plugin(str(tmp_path / "out" / "bundle" / "Corda à.vst3"))
+    assert plugin.name == "Corda à" and plugin.is_instrument
     notes = [(0, 1.5, 55, 100), (2, 1.5, 67, 100), (4, 1.5, 79, 100), (6, 6.0, 64, 100)]
     msgs = []
     for s, d, k, v in notes:

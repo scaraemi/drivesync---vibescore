@@ -1,0 +1,113 @@
+name: 'Samplevst: plugin and tests'
+
+# Builds the generic sampler plugin (services/samplevst/plugin) on Windows, macOS and Linux, tests on each one an
+# instrument made from samples (Steinberg validator, played in a JUCE host), merges the three builds into one
+# SampleVST.vst3 and publishes it as the release "samplevst-plugin": the Drive worker copies it for every instrument.
+
+on:
+  push:
+    paths:
+      - 'services/samplevst/**'
+      - '.github/workflows/samplevst.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VST3SDK_TAG: v3.8.1_build_84
+
+jobs:
+  plugin:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            arch: x86_64-win
+          - os: macos-14
+            arch: MacOS
+          - os: ubuntu-24.04
+            arch: x86_64-linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: services/samplevst
+
+      - name: VST 3 SDK
+        run: git clone -q --depth 1 --branch "$VST3SDK_TAG" --recursive --shallow-submodules https://github.com/steinbergmedia/vst3sdk.git "$RUNNER_TEMP/vst3sdk"
+
+      - name: Linux packages for the validator
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libgtkmm-3.0-dev libjack-jackd2-dev libxcb-util-dev libxcb-cursor-dev libxcb-keysyms1-dev libxcb-xkb-dev libxkbcommon-x11-dev fluidsynth ffmpeg
+
+      - name: Build
+        run: |
+          extra=()
+          [ "$RUNNER_OS" = macOS ] && extra+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
+          cmake -S services/samplevst/plugin -B build -DCMAKE_BUILD_TYPE=Release -Dvst3sdk_SOURCE_DIR="$RUNNER_TEMP/vst3sdk" \
+            -DSAMPLEVST_HOSTING=ON "${extra[@]}"
+          cmake --build build --config Release --parallel --target SampleVST validator
+          bundle=$(find build/VST3 -maxdepth 2 -name SampleVST.vst3 -type d | head -1)
+          validator=$(find build/bin -name 'validator*' -type f | grep -v '\.pdb$' | head -1)
+          echo "BUNDLE=$PWD/$bundle" >> "$GITHUB_ENV"
+          echo "VALIDATOR=$PWD/$validator" >> "$GITHUB_ENV"
+          find "$bundle" | sort
+          [ "$RUNNER_OS" = macOS ] && lipo -info "$bundle/Contents/MacOS/SampleVST" || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Tests (an instrument made with this build, validated and played)
+        working-directory: services/samplevst
+        run: |
+          pip install -q -r requirements-test.txt
+          SAMPLEVST_TEMPLATE="$BUNDLE" SAMPLEVST_VALIDATOR="$VALIDATOR" python -m pytest -q -s -p no:cacheprovider -rs tests
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: ${{ env.BUNDLE }}
+          retention-days: 7
+
+  merge:
+    needs: plugin
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+
+      - name: One bundle for the three systems
+        run: |
+          mkdir -p SampleVST.vst3/Contents
+          for d in bundle-*; do cp -a "$d"/Contents/. SampleVST.vst3/Contents/; done
+          chmod +x SampleVST.vst3/Contents/MacOS/SampleVST SampleVST.vst3/Contents/x86_64-linux/SampleVST.so
+          rm -rf SampleVST.vst3/Contents/_CodeSignature
+          find SampleVST.vst3 | sort
+          for a in x86_64-win/SampleVST.vst3 MacOS/SampleVST x86_64-linux/SampleVST.so Info.plist; do
+            test -f "SampleVST.vst3/Contents/$a" || { echo "missing $a"; exit 1; }
+          done
+          zip -qr -X SampleVST.vst3.zip SampleVST.vst3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SampleVST.vst3
+          path: SampleVST.vst3.zip
+
+      - name: Publish (release samplevst-plugin)
+        if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=samplevst-plugin
+          if ! gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "SampleVST plugin" \
+              --notes "Generic sampler used by services/samplevst to make VST3 instruments from samples. Not meant to be installed by itself."
+          fi
+          gh release upload "$tag" SampleVST.vst3.zip -R "$GITHUB_REPOSITORY" --clobber

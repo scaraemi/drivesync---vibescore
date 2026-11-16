@@ -31,12 +31,32 @@ def probe(path: Path) -> dict:
             "duration": float((info.get("format") or {}).get("duration") or 0)}
 
 
+def _load_direct(path: Path) -> tuple[np.ndarray, int] | None:
+    """WAV, AIFF, FLAC, OGG through libsndfile, without ffmpeg; None if it cannot read the file."""
+    try:
+        data, sr = sf.read(str(path), dtype="float32", always_2d=True, frames=MAX_SECONDS * 192000)
+    except Exception:  # noqa: BLE001 - not a format libsndfile knows
+        return None
+    data = data[: MAX_SECONDS * sr]
+    if data.shape[1] > 2:
+        data = np.stack([data[:, 0::2].mean(axis=1), data[:, 1::2].mean(axis=1)], axis=1)
+    if sr > MAX_RATE:
+        from scipy.signal import resample_poly
+        g = np.gcd(sr, MAX_RATE)
+        data = resample_poly(data, MAX_RATE // g, sr // g, axis=0).astype(np.float32)
+        sr = MAX_RATE
+    return data, sr
+
+
 def load(path: Path) -> tuple[np.ndarray, int]:
     """Any format ffmpeg reads (WAV, AIFF, FLAC, MP3, M4A, OGG, video...) -> float32 (frames, channels), rate.
 
     At most 2 channels and 48 kHz: a 96 kHz sample sounds the same once played, and is twice as big."""
     if not shutil.which("ffmpeg"):
-        raise AudioError("ffmpeg non installato")
+        direct = _load_direct(path)
+        if direct is None:
+            raise AudioError("formato non leggibile senza ffmpeg")
+        return _finish(*direct)
     info = probe(path)
     rate = min(info["rate"], MAX_RATE)
     channels = min(info["channels"], 2)
@@ -48,6 +68,10 @@ def load(path: Path) -> tuple[np.ndarray, int]:
         if r.returncode != 0 or not wav.exists():
             raise AudioError(f"decodifica non riuscita: {r.stderr.strip()[:200]}")
         data, sr = sf.read(str(wav), dtype="float32", always_2d=True)
+    return _finish(data, sr)
+
+
+def _finish(data: np.ndarray, sr: int) -> tuple[np.ndarray, int]:
     if len(data) == 0:
         raise AudioError("il file è vuoto")
     # Two identical channels are mono: half the size, and the SoundFont needs one sample instead of two
