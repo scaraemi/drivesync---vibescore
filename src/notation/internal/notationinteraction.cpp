@@ -166,7 +166,7 @@ void setClipboardMimeData(QMimeData* mimeData)
     own.settingOwn = false;
     own.systemText = clipboard->text();
 #else
-    setClipboardMimeData(mimeData);
+    QGuiApplication::clipboard()->setMimeData(mimeData);
 #endif
 }
 
