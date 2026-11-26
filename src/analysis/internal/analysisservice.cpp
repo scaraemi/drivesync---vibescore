@@ -78,6 +78,30 @@ static QPointF toQ(const PointF& p)
     return QPointF(p.x(), p.y());
 }
 
+//! The arc of a Curve: from a to b, bulging to the left of the a->b direction (above, when drawn left to right)
+static void curveControls(const QPointF& a, const QPointF& b, QPointF& c1, QPointF& c2)
+{
+    const QPointF d = b - a;
+    const QPointF normal(d.y(), -d.x()); // left of a->b, in screen coordinates (y down)
+    const QPointF bulge = normal * 0.35;
+    c1 = a + d * 0.25 + bulge;
+    c2 = a + d * 0.75 + bulge;
+}
+
+//! A Bracket: along a->b, with hooks of `hook` towards the right of a->b (down, when drawn left to right)
+static std::vector<QPointF> bracketPoints(const QPointF& a, const QPointF& b, double hook)
+{
+    const QLineF line(a, b);
+    const double length = line.length();
+    if (length <= 0) {
+        return { a, b };
+    }
+    const QPointF unit = (b - a) / length;
+    const QPointF toHook(-unit.y(), unit.x());
+    return { a + toHook * hook, a, b, b + toHook * hook };
+}
+
+
 AnalysisService::AnalysisService(const modularity::ContextPtr& iocCtx)
     : Contextable(iocCtx)
 {
@@ -1013,29 +1037,6 @@ bool AnalysisService::keyPress(int key, Qt::KeyboardModifiers modifiers)
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Painting
-
-//! The arc of a Curve: from a to b, bulging to the left of the a->b direction (above, when drawn left to right)
-static void curveControls(const QPointF& a, const QPointF& b, QPointF& c1, QPointF& c2)
-{
-    const QPointF d = b - a;
-    const QPointF normal(d.y(), -d.x()); // left of a->b, in screen coordinates (y down)
-    const QPointF bulge = normal * 0.35;
-    c1 = a + d * 0.25 + bulge;
-    c2 = a + d * 0.75 + bulge;
-}
-
-//! A Bracket: along a->b, with hooks of `hook` towards the right of a->b (down, when drawn left to right)
-static std::vector<QPointF> bracketPoints(const QPointF& a, const QPointF& b, double hook)
-{
-    const QLineF line(a, b);
-    const double length = line.length();
-    if (length <= 0) {
-        return { a, b };
-    }
-    const QPointF unit = (b - a) / length;
-    const QPointF toHook(-unit.y(), unit.x());
-    return { a + toHook * hook, a, b, b + toHook * hook };
-}
 
 static void drawArrowHead(draw::Painter* painter, const PointF& from, const PointF& tip, double head)
 {
