@@ -23,6 +23,8 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QPageLayout>
+#include <QBuffer>
 #include <QFile>
 #include <QFileInfo>
 #include <QLineF>
@@ -1287,8 +1289,9 @@ void AnalysisService::paint(draw::Painter* painter)
 Ret AnalysisService::exportPdf()
 {
     notation::INotationPtr notation = globalContext()->currentNotation();
-    if (!notation || !isActive()) {
-        return make_ret(Ret::Code::UnknownError);
+    if (!notation || !isAvailable()) {
+        LOGE() << "Analysis PDF: no score";
+        return make_ret(Ret::Code::UnknownError, muse::trc("analysis", "Open a saved score first."));
     }
 
     const QFileInfo score(m_scorePath);
@@ -1300,48 +1303,69 @@ Ret AnalysisService::exportPdf()
     QDir().mkpath(dir);
     const QString path = dir + "/" + fileName;
 #else
-    const QString path = interactive()->selectSavingFileSync(muse::trc("analysis", "Export with analysis"),
-                                                              io::path_t(score.absolutePath() + "/" + fileName),
-                                                              { muse::trc("analysis", "PDF file") + " (*.pdf)" }).toQString();
+    QString path = interactive()->selectSavingFileSync(muse::trc("analysis", "Export with analysis"),
+                                                       io::path_t(score.absolutePath() + "/" + fileName),
+                                                       { muse::trc("analysis", "PDF file") + " (*.pdf)" }).toQString();
     if (path.isEmpty()) {
         return make_ret(Ret::Code::Cancel);
     }
+    if (!path.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive)) {
+        path += QStringLiteral(".pdf");
+    }
 #endif
+    LOGI() << "Analysis PDF: writing " << path.toStdString();
 
-    const SizeF pageSize = notation->painting()->pageSizeInch();
-    QPdfWriter pdf(path);
-    pdf.setPageSize(QPageSize(QSizeF(pageSize.width(), pageSize.height()), QPageSize::Inch));
-    pdf.setPageMargins(QMarginsF(0, 0, 0, 0));
-    pdf.setTitle(score.completeBaseName());
-    pdf.setCreator(QStringLiteral("VibeScore"));
-    pdf.setResolution(300);
+    // Into memory first (as MuseScore's own PDF export), then the file
+    QByteArray data;
+    {
+        QBuffer buffer(&data);
+        buffer.open(QIODevice::WriteOnly);
 
-    draw::Painter painter(&pdf, "analysispdf");
-    if (!painter.isActive()) {
-        return make_ret(Ret::Code::UnknownError, muse::trc("analysis", "The PDF could not be written."));
-    }
+        const SizeF pageSize = notation->painting()->pageSizeInch();
+        QPdfWriter pdf(&buffer);
+        pdf.setResolution(300);
+        pdf.setCreator(QStringLiteral("VibeScore"));
+        pdf.setTitle(score.completeBaseName());
+        pdf.setPageMargins(QMarginsF());
+        pdf.setPageLayout(QPageLayout(QPageSize(QSizeF(pageSize.width(), pageSize.height()), QPageSize::Inch),
+                                      QPageLayout::Orientation::Portrait, QMarginsF()));
 
-    const auto& pages = notation->elements()->pages();
-    for (size_t i = 0; i < pages.size(); ++i) {
-        if (i > 0) {
-            pdf.newPage();
+        draw::Painter painter(&pdf, "analysispdf");
+        if (!painter.isActive()) {
+            LOGE() << "Analysis PDF: the painter could not start";
+            return make_ret(Ret::Code::UnknownError, muse::trc("analysis", "The PDF could not be written."));
         }
-        notation::INotationPainting::Options opt;
-        opt.deviceDpi = pdf.logicalDpiX();
-        opt.fromPage = int(i);
-        opt.toPage = int(i);
-        opt.printPageBackground = true;
-        notation->painting()->paintPdf(&painter, opt);
 
-        // The page is drawn in its own coordinates: the analysis too
-        const engraving::Page* page = pages.at(i);
-        const QRectF pageRect = QRectF(toQ(page->pos()), page->ldata()->bbox().size().toQSizeF());
-        painter.save();
-        painter.translate(-page->pos().x(), -page->pos().y());
-        paintLayers(&painter, pageRect);
-        painter.restore();
+        const auto& pages = notation->elements()->pages();
+        for (size_t i = 0; i < pages.size(); ++i) {
+            if (i > 0) {
+                pdf.newPage();
+            }
+            notation::INotationPainting::Options opt;
+            opt.deviceDpi = pdf.logicalDpiX();
+            opt.fromPage = int(i);
+            opt.toPage = int(i);
+            opt.printPageBackground = true;
+            notation->painting()->paintPdf(&painter, opt);
+
+            // The page is drawn in its own coordinates: the analysis too
+            const engraving::Page* page = pages.at(i);
+            const QRectF pageRect = QRectF(toQ(page->pos()), page->ldata()->bbox().size().toQSizeF());
+            painter.save();
+            painter.translate(-page->pos().x(), -page->pos().y());
+            paintLayers(&painter, pageRect);
+            painter.restore();
+        }
+        painter.endDraw();
     }
-    painter.endDraw();
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) {
+        LOGE() << "Analysis PDF: cannot write " << path.toStdString() << ": " << file.errorString().toStdString();
+        return make_ret(Ret::Code::UnknownError, file.errorString().toStdString());
+    }
+    file.close();
+    LOGI() << "Analysis PDF: written, " << data.size() << " bytes";
 
 #ifdef Q_OS_ANDROID
     QJniEnvironment env;
@@ -1355,6 +1379,7 @@ Ret AnalysisService::exportPdf()
                                        context.object(), jpaths, title.object<jstring>());
     env.checkAndClearExceptions();
 #else
+    interactive()->info(muse::trc("analysis", "PDF exported"), IInteractive::Text(QDir::toNativeSeparators(path).toStdString()));
     interactive()->revealInFileBrowser(io::path_t(path));
 #endif
     return make_ok();

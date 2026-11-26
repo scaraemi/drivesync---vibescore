@@ -38,7 +38,7 @@ Item {
     }
 
     AnalysisToolbarModel {
-        id: model
+        id: toolbarModel
 
         Component.onCompleted: load()
 
@@ -58,7 +58,7 @@ Item {
         order: root.navigationOrder
         direction: NavigationPanel.Horizontal
         accessible.name: qsTrc("notation", "Analysis")
-        enabled: root.visible && model.isAvailable
+        enabled: root.visible && toolbarModel.isAvailable
     }
 
     // The switch: always there when a saved score is open
@@ -70,18 +70,18 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: root.width < 600 ? 4 : 12
 
-        visible: model.isAvailable
+        visible: toolbarModel.isAvailable
         icon: IconCode.EDIT
         // Narrow screens (phones): only the icon, to cover less of the score
-        text: root.width < 600 ? "" : (model.isActive ? qsTrc("notation", "Analysis on") : qsTrc("notation", "Analysis"))
+        text: root.width < 600 ? "" : (toolbarModel.isActive ? qsTrc("notation", "Analysis on") : qsTrc("notation", "Analysis"))
         orientation: Qt.Horizontal
-        accentButton: model.isActive
+        accentButton: toolbarModel.isActive
         toolTipTitle: qsTrc("notation", "Analysis: write and draw over the score")
 
         navigation.panel: navPanel
         navigation.column: 0
 
-        onClicked: model.toggle()
+        onClicked: toolbarModel.toggle()
     }
 
     // The tools
@@ -95,7 +95,7 @@ Item {
         width: Math.min(toolsFlow.implicitWidth + 16, root.width - 24)
         height: toolsFlow.implicitHeight + 12
 
-        visible: model.isActive
+        visible: toolbarModel.isActive
         color: ui.theme.backgroundPrimaryColor
         border.color: ui.theme.strokeColor
         border.width: 1
@@ -125,12 +125,12 @@ Item {
 
                     icon: modelData.icon
                     toolTipTitle: modelData.title
-                    accentButton: model.tool === modelData.tool
+                    accentButton: toolbarModel.tool === modelData.tool
 
                     navigation.panel: navPanel
                     navigation.column: 1 + index
 
-                    onClicked: model.setTool(modelData.tool)
+                    onClicked: toolbarModel.setTool(modelData.tool)
                 }
             }
 
@@ -149,7 +149,7 @@ Item {
 
                 readonly property var current: {
                     for (let i = 0; i < shapes.length; ++i) {
-                        if (shapes[i].tool === model.tool) {
+                        if (shapes[i].tool === toolbarModel.tool) {
                             return shapes[i]
                         }
                     }
@@ -164,11 +164,11 @@ Item {
                 navigation.column: 9
 
                 menuModel: shapes.map(function(s) {
-                    return { id: String(s.tool), title: s.title, checkable: true, checked: s.tool === model.tool }
+                    return { id: String(s.tool), title: s.title, checkable: true, checked: s.tool === toolbarModel.tool }
                 })
 
                 onHandleMenuItem: function(itemId) {
-                    model.setTool(Number(itemId))
+                    toolbarModel.setTool(Number(itemId))
                 }
             }
 
@@ -176,23 +176,23 @@ Item {
             MenuButton {
                 id: symbolButton
 
-                text: model.symbol
+                text: toolbarModel.symbol
                 toolTipTitle: qsTrc("notation", "Symbol")
-                accentButton: model.tool === AnalysisToolbarModel.Symbol
+                accentButton: toolbarModel.tool === AnalysisToolbarModel.Symbol
 
                 navigation.panel: navPanel
                 navigation.column: 10
 
-                menuModel: model.symbols.map(function(s) { return { id: s, title: s } })
+                menuModel: toolbarModel.symbols.map(function(s) { return { id: s, title: s } })
 
                 onHandleMenuItem: function(itemId) {
-                    model.setSymbol(itemId)
+                    toolbarModel.setSymbol(itemId)
                 }
             }
 
             // Colours
             Repeater {
-                model: model.colors
+                model: toolbarModel.colors
 
                 Rectangle {
                     required property var modelData
@@ -202,20 +202,20 @@ Item {
                     height: 28
                     radius: 14
                     color: modelData
-                    border.width: Qt.colorEqual(model.color, modelData) ? 3 : 1
-                    border.color: Qt.colorEqual(model.color, modelData) ? ui.theme.accentColor : ui.theme.strokeColor
+                    border.width: Qt.colorEqual(toolbarModel.color, modelData) ? 3 : 1
+                    border.color: Qt.colorEqual(toolbarModel.color, modelData) ? ui.theme.accentColor : ui.theme.strokeColor
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: model.setColor(parent.modelData)
+                        onClicked: toolbarModel.setColor(parent.modelData)
                     }
                 }
             }
 
             // Line width
             MenuButton {
-                text: model.lineWidth <= 0.15 ? qsTrc("notation", "Thin")
-                      : model.lineWidth >= 0.45 ? qsTrc("notation", "Thick") : qsTrc("notation", "Medium")
+                text: toolbarModel.lineWidth <= 0.15 ? qsTrc("notation", "Thin")
+                      : toolbarModel.lineWidth >= 0.45 ? qsTrc("notation", "Thick") : qsTrc("notation", "Medium")
                 toolTipTitle: qsTrc("notation", "Line width")
 
                 navigation.panel: navPanel
@@ -228,34 +228,34 @@ Item {
                 ]
 
                 onHandleMenuItem: function(itemId) {
-                    model.setLineWidth(Number(itemId))
+                    toolbarModel.setLineWidth(Number(itemId))
                 }
             }
 
             FlatButton {
                 icon: IconCode.UNDO
                 toolTipTitle: qsTrc("global", "Undo")
-                enabled: model.canUndo
+                enabled: toolbarModel.canUndo
 
                 navigation.panel: navPanel
                 navigation.column: 21
 
-                onClicked: model.undo()
+                onClicked: toolbarModel.undo()
             }
 
             FlatButton {
                 icon: IconCode.REDO
                 toolTipTitle: qsTrc("global", "Redo")
-                enabled: model.canRedo
+                enabled: toolbarModel.canRedo
 
                 navigation.panel: navPanel
                 navigation.column: 22
 
-                onClicked: model.redo()
+                onClicked: toolbarModel.redo()
             }
 
             FlatButton {
-                visible: model.hasSelection
+                visible: toolbarModel.hasSelection
                 icon: IconCode.COPY
                 toolTipTitle: qsTrc("global", "Copy")
                 toolTipDescription: qsTrc("notation", "Then tap an empty spot and Paste (or paste right away: next to it)")
@@ -263,33 +263,33 @@ Item {
                 navigation.panel: navPanel
                 navigation.column: 25
 
-                onClicked: model.copySelection()
+                onClicked: toolbarModel.copySelection()
             }
 
             FlatButton {
-                visible: model.hasSelection
+                visible: toolbarModel.hasSelection
                 icon: IconCode.CUT
                 toolTipTitle: qsTrc("global", "Cut")
 
                 navigation.panel: navPanel
                 navigation.column: 26
 
-                onClicked: model.cutSelection()
+                onClicked: toolbarModel.cutSelection()
             }
 
             FlatButton {
-                visible: model.canPaste
+                visible: toolbarModel.canPaste
                 icon: IconCode.PASTE
                 toolTipTitle: qsTrc("global", "Paste")
 
                 navigation.panel: navPanel
                 navigation.column: 27
 
-                onClicked: model.paste()
+                onClicked: toolbarModel.paste()
             }
 
             FlatButton {
-                visible: model.hasSelection
+                visible: toolbarModel.hasSelection
                 icon: IconCode.DELETE_TANK
                 text: qsTrc("global", "Delete")
                 orientation: Qt.Horizontal
@@ -297,7 +297,7 @@ Item {
                 navigation.panel: navPanel
                 navigation.column: 23
 
-                onClicked: model.deleteSelection()
+                onClicked: toolbarModel.deleteSelection()
             }
 
             // Layers: show or hide the others', clear one's own, export
@@ -310,8 +310,8 @@ Item {
 
                 menuModel: {
                     let items = []
-                    for (let i = 0; i < model.layers.length; ++i) {
-                        const layer = model.layers[i]
+                    for (let i = 0; i < toolbarModel.layers.length; ++i) {
+                        const layer = toolbarModel.layers[i]
                         items.push({
                             id: "layer:" + layer.id + ":" + (layer.visible ? "0" : "1"),
                             //: An analysis layer in the menu: %1 is a person, %2 the number of objects in it
@@ -331,12 +331,12 @@ Item {
 
                 onHandleMenuItem: function(itemId) {
                     if (itemId === "export") {
-                        Qt.callLater(model.exportPdf)
+                        Qt.callLater(function() { toolbarModel.exportPdf() })
                     } else if (itemId === "clear") {
-                        Qt.callLater(model.clearMine)
+                        Qt.callLater(function() { toolbarModel.clearMine() })
                     } else if (itemId.startsWith("layer:")) {
                         const parts = itemId.split(":")
-                        model.setLayerVisible(parts[1], parts[2] === "1")
+                        toolbarModel.setLayerVisible(parts[1], parts[2] === "1")
                     }
                 }
             }
@@ -383,7 +383,7 @@ Item {
                 }
 
                 onAccepted: {
-                    model.addText(textBox.text)
+                    toolbarModel.addText(textBox.text)
                     root.closeTextBox()
                 }
             }
@@ -397,7 +397,7 @@ Item {
                 navigation.column: 31
 
                 onClicked: {
-                    model.addText(textBox.text)
+                    toolbarModel.addText(textBox.text)
                     root.closeTextBox()
                 }
             }
@@ -428,10 +428,10 @@ Item {
     }
 
     Connections {
-        target: model
+        target: toolbarModel
 
         function onStateChanged() {
-            if (!model.isActive && textBox.visible) {
+            if (!toolbarModel.isActive && textBox.visible) {
                 root.closeTextBox()
             }
         }
