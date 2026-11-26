@@ -55,6 +55,13 @@ public:
         Text,
         Symbol,
         Eraser,     // tap an object of one's own layer to delete it
+        // Shapes in the dragged rectangle (added after the first ones: the toolbar maps the tools by number)
+        Rectangle,
+        Highlight,
+        Triangle,
+        DoubleArrow,
+        Curve,
+        Bracket,
     };
 
     struct LayerInfo {

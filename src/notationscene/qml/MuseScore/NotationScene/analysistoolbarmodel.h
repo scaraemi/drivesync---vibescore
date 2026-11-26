@@ -57,7 +57,8 @@ class AnalysisToolbarModel : public QObject, public muse::Contextable, public mu
 public:
     // As IAnalysisService::Tool
     enum Tool {
-        Select = 0, Pen, Line, Arrow, Circle, Text, Symbol, Eraser
+        Select = 0, Pen, Line, Arrow, Circle, Text, Symbol, Eraser,
+        Rectangle, Highlight, Triangle, DoubleArrow, Curve, Bracket
     };
     Q_ENUM(Tool)
 

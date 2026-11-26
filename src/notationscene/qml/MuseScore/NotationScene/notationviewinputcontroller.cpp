@@ -1497,6 +1497,15 @@ bool NotationViewInputController::shortcutOverrideEvent(QKeyEvent* event)
 {
     auto key = event->key();
 
+    // Analysis: Delete, Backspace, Escape, Ctrl+Z / Ctrl+Y are for the drawings (not the score's shortcuts)
+    if (isAnalysisActive()) {
+        const bool ctrl = event->modifiers() & Qt::ControlModifier;
+        if (key == Qt::Key_Delete || key == Qt::Key_Backspace || key == Qt::Key_Escape
+            || (ctrl && (key == Qt::Key_Z || key == Qt::Key_Y))) {
+            return true;
+        }
+    }
+
     const bool editTextKeysFound = key == Qt::Key_Return || key == Qt::Key_Enter;
     if (editTextKeysFound && startTextEditingAllowed()) {
         return true;

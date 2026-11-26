@@ -134,6 +134,44 @@ Item {
                 }
             }
 
+            // More shapes: the current one is shown when chosen
+            MenuButton {
+                id: shapesButton
+
+                readonly property var shapes: [
+                    { tool: AnalysisToolbarModel.Rectangle, title: qsTrc("notation", "Rectangle") },
+                    { tool: AnalysisToolbarModel.Highlight, title: qsTrc("notation", "Highlight") },
+                    { tool: AnalysisToolbarModel.Triangle, title: qsTrc("notation", "Triangle") },
+                    { tool: AnalysisToolbarModel.DoubleArrow, title: qsTrc("notation", "Double arrow") },
+                    { tool: AnalysisToolbarModel.Curve, title: qsTrc("notation", "Curve") },
+                    { tool: AnalysisToolbarModel.Bracket, title: qsTrc("notation", "Bracket") }
+                ]
+
+                readonly property var current: {
+                    for (let i = 0; i < shapes.length; ++i) {
+                        if (shapes[i].tool === model.tool) {
+                            return shapes[i]
+                        }
+                    }
+                    return null
+                }
+
+                text: current ? current.title : qsTrc("notation", "Shapes")
+                toolTipTitle: qsTrc("notation", "More shapes")
+                accentButton: current !== null
+
+                navigation.panel: navPanel
+                navigation.column: 9
+
+                menuModel: shapes.map(function(s) {
+                    return { id: String(s.tool), title: s.title, checkable: true, checked: s.tool === model.tool }
+                })
+
+                onHandleMenuItem: function(itemId) {
+                    model.setTool(Number(itemId))
+                }
+            }
+
             // Symbols: the current one, the others in the menu
             MenuButton {
                 id: symbolButton

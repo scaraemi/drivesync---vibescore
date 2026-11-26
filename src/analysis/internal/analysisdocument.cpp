@@ -37,6 +37,12 @@ static QString shapeName(AnalysisObject::Shape shape)
     case AnalysisObject::Shape::Line: return "line";
     case AnalysisObject::Shape::Arrow: return "arrow";
     case AnalysisObject::Shape::Circle: return "circle";
+    case AnalysisObject::Shape::Rectangle: return "rectangle";
+    case AnalysisObject::Shape::Highlight: return "highlight";
+    case AnalysisObject::Shape::Triangle: return "triangle";
+    case AnalysisObject::Shape::DoubleArrow: return "doublearrow";
+    case AnalysisObject::Shape::Curve: return "curve";
+    case AnalysisObject::Shape::Bracket: return "bracket";
     case AnalysisObject::Shape::Text: return "text";
     case AnalysisObject::Shape::Symbol: return "symbol";
     }
@@ -48,6 +54,9 @@ static bool shapeFromName(const QString& name, AnalysisObject::Shape& shape)
     static const QList<QPair<QString, AnalysisObject::Shape> > shapes {
         { "pen", AnalysisObject::Shape::Pen }, { "line", AnalysisObject::Shape::Line },
         { "arrow", AnalysisObject::Shape::Arrow }, { "circle", AnalysisObject::Shape::Circle },
+        { "rectangle", AnalysisObject::Shape::Rectangle }, { "highlight", AnalysisObject::Shape::Highlight },
+        { "triangle", AnalysisObject::Shape::Triangle }, { "doublearrow", AnalysisObject::Shape::DoubleArrow },
+        { "curve", AnalysisObject::Shape::Curve }, { "bracket", AnalysisObject::Shape::Bracket },
         { "text", AnalysisObject::Shape::Text }, { "symbol", AnalysisObject::Shape::Symbol },
     };
     for (const auto& [n, s] : shapes) {

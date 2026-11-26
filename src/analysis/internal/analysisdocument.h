@@ -36,6 +36,13 @@ struct AnalysisObject {
         Circle,
         Text,
         Symbol,
+        // Added later: two points, the corners (or ends) of the dragged rectangle
+        Rectangle,
+        Highlight,   // a translucent box over notes
+        Triangle,
+        DoubleArrow,
+        Curve,       // an arc from one point to the other, like a slur
+        Bracket,     // a square bracket under (or over) a group
     };
 
     QString id;

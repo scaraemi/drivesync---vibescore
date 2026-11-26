@@ -112,7 +112,11 @@ private:
     Layer* myLayer();
     const Layer* myLayer() const;
     Layer& ensureMyLayer();
-    QString authorId() const;
+    QString authorId() const;          // the layer of mine: the account's, or this device's
+    QString accountAuthorId() const;   // "" while the Google account is not known
+    QString deviceAuthorId() const;    // this device's (older layers)
+    bool isMineId(const QString& id) const;
+    void mergeOlderLayersOfMine();
     QString authorName() const;
     void scheduleSave();
     void saveMyLayer();

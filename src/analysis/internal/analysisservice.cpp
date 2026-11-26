@@ -18,10 +18,12 @@
  */
 #include "analysisservice.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QLineF>
 #include <QPageSize>
@@ -39,6 +41,7 @@
 #include "draw/types/pen.h"
 #include "draw/types/brush.h"
 #include "draw/types/font.h"
+#include "draw/types/painterpath.h"
 
 #include "engraving/dom/score.h"
 #include "engraving/dom/measure.h"
@@ -96,6 +99,24 @@ void AnalysisService::init()
     globalContext()->currentProjectChanged().onNotify(this, [this]() {
         onProjectChanged();
     });
+    if (driveService()) {
+        // The account becomes known after the start: one's layer is the account's from then on
+        driveService()->accountChanged().onNotify(this, [this]() {
+            if (m_scorePath.isEmpty()) {
+                return;
+            }
+            if (m_saveTimer.isActive()) {
+                m_saveTimer.stop();
+                saveMyLayer();
+            }
+            m_selectedId.clear();
+            m_undo.clear();
+            m_redo.clear();
+            loadLayers();
+            m_stateChanged.notify();
+            m_repaintRequested.notify();
+        });
+    }
     onProjectChanged();
 }
 
@@ -216,19 +237,77 @@ QString AnalysisService::authorName() const
     return user.isEmpty() ? muse::qtrc("analysis", "Me") : user;
 }
 
-QString AnalysisService::authorId() const
+QString AnalysisService::accountAuthorId() const
 {
-    // Chosen once: the same person keeps the same layer file. From the Google account when known, so that one's
-    // devices share one layer
+    const QString email = driveService() ? driveService()->accountEmail().toLower() : QString();
+    if (email.isEmpty()) {
+        return QString();
+    }
+    return QString::fromLatin1(QCryptographicHash::hash(email.toUtf8(), QCryptographicHash::Sha1).toHex().left(8));
+}
+
+QString AnalysisService::deviceAuthorId() const
+{
+    // Chosen once on this device (from the Google account if it was known then)
     QSettings settings;
     QString id = settings.value(AUTHOR_ID_KEY).toString();
     if (id.isEmpty()) {
-        const QString email = driveService() ? driveService()->accountEmail().toLower() : QString();
-        const QByteArray seed = email.isEmpty() ? QUuid::createUuid().toByteArray() : email.toUtf8();
-        id = QString::fromLatin1(QCryptographicHash::hash(seed, QCryptographicHash::Sha1).toHex().left(8));
+        id = accountAuthorId();
+        if (id.isEmpty()) {
+            id = QString::fromLatin1(QCryptographicHash::hash(QUuid::createUuid().toByteArray(), QCryptographicHash::Sha1).toHex().left(8));
+        }
         settings.setValue(AUTHOR_ID_KEY, id);
     }
     return id;
+}
+
+QString AnalysisService::authorId() const
+{
+    // One layer per person: the Google account's, so that one's devices (phone, computer) share it. Without an
+    // account, this device's.
+    const QString account = accountAuthorId();
+    return account.isEmpty() ? deviceAuthorId() : account;
+}
+
+bool AnalysisService::isMineId(const QString& id) const
+{
+    return id == authorId() || id == deviceAuthorId();
+}
+
+void AnalysisService::mergeOlderLayersOfMine()
+{
+    // A layer of mine under this device's older id (before the account was known): its objects move to the
+    // account's layer, and its file goes (from Drive too, with the next sync)
+    const QString primaryId = authorId();
+    bool merged = false;
+    for (auto it = m_layers.begin(); it != m_layers.end();) {
+        if (!it->mine || it->id == primaryId) {
+            ++it;
+            continue;
+        }
+        Layer older = *it;
+        it = m_layers.erase(it);
+
+        Layer& primary = ensureMyLayer();
+        for (const AnalysisObject& obj : older.file.objects) {
+            const bool known = std::any_of(primary.file.objects.begin(), primary.file.objects.end(),
+                                           [&](const AnalysisObject& o) { return o.id == obj.id; });
+            if (!known) {
+                primary.file.objects.push_back(obj);
+            }
+        }
+        if (m_watcher.files().contains(older.path)) {
+            m_watcher.removePath(older.path);
+        }
+        QFile::remove(older.path);
+        LOGI() << "Analysis: layer " << older.id.toStdString() << " merged into " << primaryId.toStdString();
+        merged = true;
+        it = m_layers.begin(); // ensureMyLayer may have inserted
+    }
+    if (merged) {
+        std::stable_sort(m_layers.begin(), m_layers.end(), [](const Layer& a, const Layer& b) { return a.mine && !b.mine; });
+        scheduleSave();
+    }
 }
 
 void AnalysisService::onProjectChanged()
@@ -284,7 +363,6 @@ void AnalysisService::loadLayers()
     }
 
     const QStringList hidden = QSettings().value(HIDDEN_LAYERS_KEY).toStringList();
-    const QString myId = authorId();
     for (const QString& path : AnalysisLayerFile::pathsFor(m_scorePath)) {
         Layer layer;
         layer.path = path;
@@ -295,7 +373,7 @@ void AnalysisService::loadLayers()
         }
         const QString name = QFileInfo(path).completeBaseName();
         layer.id = name.mid(name.lastIndexOf('.') + 1);
-        layer.mine = layer.id == myId;
+        layer.mine = isMineId(layer.id);
         layer.visible = layer.mine || !hidden.contains(layer.id);
         m_layers.push_back(layer);
         m_watcher.addPath(path);
@@ -304,6 +382,7 @@ void AnalysisService::loadLayers()
 
     // Mine first
     std::stable_sort(m_layers.begin(), m_layers.end(), [](const Layer& a, const Layer& b) { return a.mine && !b.mine; });
+    mergeOlderLayersOfMine();
 }
 
 void AnalysisService::reloadChangedLayers()
@@ -313,7 +392,6 @@ void AnalysisService::reloadChangedLayers()
     }
 
     const QStringList hidden = QSettings().value(HIDDEN_LAYERS_KEY).toStringList();
-    const QString myId = authorId();
     bool any = false;
     for (const QString& path : AnalysisLayerFile::pathsFor(m_scorePath)) {
         const QString name = QFileInfo(path).completeBaseName();
@@ -329,7 +407,7 @@ void AnalysisService::reloadChangedLayers()
             layer.id = id;
             layer.path = path;
             layer.file = file;
-            layer.mine = id == myId;
+            layer.mine = isMineId(id);
             layer.visible = layer.mine || !hidden.contains(id);
             m_layers.push_back(layer);
             any = true;
@@ -345,6 +423,7 @@ void AnalysisService::reloadChangedLayers()
 
     if (any) {
         std::stable_sort(m_layers.begin(), m_layers.end(), [](const Layer& a, const Layer& b) { return a.mine && !b.mine; });
+        mergeOlderLayersOfMine();
         m_stateChanged.notify();
         m_repaintRequested.notify();
     }
@@ -352,8 +431,9 @@ void AnalysisService::reloadChangedLayers()
 
 AnalysisService::Layer* AnalysisService::myLayer()
 {
+    const QString id = authorId();
     for (Layer& layer : m_layers) {
-        if (layer.mine) {
+        if (layer.mine && layer.id == id) {
             return &layer;
         }
     }
@@ -362,8 +442,9 @@ AnalysisService::Layer* AnalysisService::myLayer()
 
 const AnalysisService::Layer* AnalysisService::myLayer() const
 {
+    const QString id = authorId();
     for (const Layer& layer : m_layers) {
-        if (layer.mine) {
+        if (layer.mine && layer.id == id) {
             return &layer;
         }
     }
@@ -564,8 +645,17 @@ QRectF AnalysisService::canvasBounds(const AnalysisObject& obj) const
         return QRectF(points.front(), QSizeF(w, h));
     }
 
-    QRectF r(points.front(), QSizeF(0, 0));
-    for (const QPointF& p : points) {
+    std::vector<QPointF> all = points;
+    if (obj.shape == AnalysisObject::Shape::Curve && points.size() >= 2) {
+        QPointF c1, c2;
+        curveControls(points.front(), points.back(), c1, c2);
+        all.push_back((points.front() + c1 * 3 + c2 * 3 + points.back()) / 8); // the middle of the arc
+    } else if (obj.shape == AnalysisObject::Shape::Bracket && points.size() >= 2) {
+        all = bracketPoints(points.front(), points.back(), 0.8 * sp);
+    }
+
+    QRectF r(all.front(), QSizeF(0, 0));
+    for (const QPointF& p : all) {
         r = r.united(QRectF(p, QSizeF(0, 0)));
     }
     return r.normalized();
@@ -575,6 +665,7 @@ QString AnalysisService::hitTest(const PointF& pos) const
 {
     const Layer* mine = myLayer();
     if (!mine) {
+        LOGI() << "Analysis: nothing of mine to pick (layers: " << m_layers.size() << ", my id " << authorId().toStdString() << ")";
         return QString();
     }
     const double tolerance = HIT_TOLERANCE_SP * spatium();
@@ -601,6 +692,12 @@ AnalysisObject::Shape AnalysisService::shapeForTool() const
     case Tool::Line: return AnalysisObject::Shape::Line;
     case Tool::Arrow: return AnalysisObject::Shape::Arrow;
     case Tool::Circle: return AnalysisObject::Shape::Circle;
+    case Tool::Rectangle: return AnalysisObject::Shape::Rectangle;
+    case Tool::Highlight: return AnalysisObject::Shape::Highlight;
+    case Tool::Triangle: return AnalysisObject::Shape::Triangle;
+    case Tool::DoubleArrow: return AnalysisObject::Shape::DoubleArrow;
+    case Tool::Curve: return AnalysisObject::Shape::Curve;
+    case Tool::Bracket: return AnalysisObject::Shape::Bracket;
     case Tool::Text: return AnalysisObject::Shape::Text;
     case Tool::Symbol: return AnalysisObject::Shape::Symbol;
     default: return AnalysisObject::Shape::Pen;
@@ -750,7 +847,13 @@ bool AnalysisService::pointerPress(const PointF& pos)
     case Tool::Pen:
     case Tool::Line:
     case Tool::Arrow:
-    case Tool::Circle: {
+    case Tool::Circle:
+    case Tool::Rectangle:
+    case Tool::Highlight:
+    case Tool::Triangle:
+    case Tool::DoubleArrow:
+    case Tool::Curve:
+    case Tool::Bracket: {
         m_draft = AnalysisObject();
         if (!anchorAt(pos, m_draft, m_draftOrigin)) {
             return true;
@@ -901,11 +1004,48 @@ bool AnalysisService::keyPress(int key, Qt::KeyboardModifiers modifiers)
         (modifiers & Qt::ShiftModifier) ? redo() : undo();
         return true;
     }
+    if (key == Qt::Key_Y && (modifiers & Qt::ControlModifier)) {
+        redo();
+        return true;
+    }
     return false;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Painting
+
+//! The arc of a Curve: from a to b, bulging to the left of the a->b direction (above, when drawn left to right)
+static void curveControls(const QPointF& a, const QPointF& b, QPointF& c1, QPointF& c2)
+{
+    const QPointF d = b - a;
+    const QPointF normal(d.y(), -d.x()); // left of a->b, in screen coordinates (y down)
+    const QPointF bulge = normal * 0.35;
+    c1 = a + d * 0.25 + bulge;
+    c2 = a + d * 0.75 + bulge;
+}
+
+//! A Bracket: along a->b, with hooks of `hook` towards the right of a->b (down, when drawn left to right)
+static std::vector<QPointF> bracketPoints(const QPointF& a, const QPointF& b, double hook)
+{
+    const QLineF line(a, b);
+    const double length = line.length();
+    if (length <= 0) {
+        return { a, b };
+    }
+    const QPointF unit = (b - a) / length;
+    const QPointF toHook(-unit.y(), unit.x());
+    return { a + toHook * hook, a, b, b + toHook * hook };
+}
+
+static void drawArrowHead(draw::Painter* painter, const PointF& from, const PointF& tip, double head)
+{
+    const double angle = std::atan2(tip.y() - from.y(), tip.x() - from.x());
+    for (double side : { 0.45, -0.45 }) {
+        const PointF wing(tip.x() - head * std::cos(angle + side), tip.y() - head * std::sin(angle + side));
+        const PointF line[2] = { tip, wing };
+        painter->drawPolyline(line, 2);
+    }
+}
 
 void AnalysisService::paintObject(draw::Painter* painter, const AnalysisObject& obj, bool selected) const
 {
@@ -936,19 +1076,63 @@ void AnalysisService::paintObject(draw::Painter* painter, const AnalysisObject& 
         const PointF b = points.back();
         painter->drawPolyline(points.data(), 2);
         if (obj.shape == AnalysisObject::Shape::Arrow) {
-            const double angle = std::atan2(b.y() - a.y(), b.x() - a.x());
-            const double head = std::max(0.8 * sp, obj.width * sp * 4);
-            for (double side : { 0.45, -0.45 }) {
-                const PointF wing(b.x() - head * std::cos(angle + side), b.y() - head * std::sin(angle + side));
-                const PointF line[2] = { b, wing };
-                painter->drawPolyline(line, 2);
-            }
+            drawArrowHead(painter, a, b, std::max(0.8 * sp, obj.width * sp * 4));
         }
         break;
     }
     case AnalysisObject::Shape::Circle: {
         const RectF r = RectF(points.front(), points.back()).normalized();
         painter->drawEllipse(r);
+        break;
+    }
+    case AnalysisObject::Shape::Rectangle: {
+        const RectF r = RectF(points.front(), points.back()).normalized();
+        painter->drawRoundedRect(r, 0.15 * sp, 0.15 * sp);
+        break;
+    }
+    case AnalysisObject::Shape::Highlight: {
+        const RectF r = RectF(points.front(), points.back()).normalized();
+        Color fill = color;
+        fill.setAlpha(70);
+        painter->setNoPen();
+        painter->setBrush(draw::Brush(fill));
+        painter->drawRoundedRect(r, 0.2 * sp, 0.2 * sp);
+        painter->setBrush(draw::BrushStyle::NoBrush);
+        painter->setPen(pen);
+        break;
+    }
+    case AnalysisObject::Shape::Triangle: {
+        const RectF r = RectF(points.front(), points.back()).normalized();
+        const PointF tri[4] = { PointF(r.center().x(), r.top()), PointF(r.right(), r.bottom()), PointF(r.left(), r.bottom()),
+                                PointF(r.center().x(), r.top()) };
+        painter->drawPolyline(tri, 4);
+        break;
+    }
+    case AnalysisObject::Shape::DoubleArrow: {
+        const PointF a = points.front();
+        const PointF b = points.back();
+        painter->drawPolyline(points.data(), 2);
+        const double head = std::max(0.8 * sp, obj.width * sp * 4);
+        drawArrowHead(painter, a, b, head);
+        drawArrowHead(painter, b, a, head);
+        break;
+    }
+    case AnalysisObject::Shape::Curve: {
+        QPointF c1, c2;
+        curveControls(qpoints.front(), qpoints.back(), c1, c2);
+        draw::PainterPath path;
+        path.moveTo(points.front());
+        path.cubicTo(PointF::fromQPointF(c1), PointF::fromQPointF(c2), points.back());
+        painter->drawPath(path);
+        break;
+    }
+    case AnalysisObject::Shape::Bracket: {
+        const std::vector<QPointF> q = bracketPoints(qpoints.front(), qpoints.back(), 0.8 * sp);
+        std::vector<PointF> b;
+        for (const QPointF& p : q) {
+            b.push_back(PointF::fromQPointF(p));
+        }
+        painter->drawPolyline(b.data(), b.size());
         break;
     }
     case AnalysisObject::Shape::Text:
