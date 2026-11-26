@@ -1501,7 +1501,8 @@ bool NotationViewInputController::shortcutOverrideEvent(QKeyEvent* event)
     if (isAnalysisActive()) {
         const bool ctrl = event->modifiers() & Qt::ControlModifier;
         if (key == Qt::Key_Delete || key == Qt::Key_Backspace || key == Qt::Key_Escape
-            || (ctrl && (key == Qt::Key_Z || key == Qt::Key_Y))) {
+            || (ctrl && (key == Qt::Key_Z || key == Qt::Key_Y || key == Qt::Key_C || key == Qt::Key_X
+                         || key == Qt::Key_V))) {
             return true;
         }
     }

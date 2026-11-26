@@ -88,6 +88,11 @@ bool AnalysisToolbarModel::hasSelection() const
     return analysisService() && analysisService()->hasSelection();
 }
 
+bool AnalysisToolbarModel::canPaste() const
+{
+    return analysisService() && analysisService()->canPaste();
+}
+
 QVariantList AnalysisToolbarModel::layers() const
 {
     QVariantList result;
@@ -173,6 +178,27 @@ void AnalysisToolbarModel::deleteSelection()
 {
     if (analysisService()) {
         analysisService()->deleteSelection();
+    }
+}
+
+void AnalysisToolbarModel::copySelection()
+{
+    if (analysisService()) {
+        analysisService()->copySelection();
+    }
+}
+
+void AnalysisToolbarModel::cutSelection()
+{
+    if (analysisService()) {
+        analysisService()->cutSelection();
+    }
+}
+
+void AnalysisToolbarModel::paste()
+{
+    if (analysisService()) {
+        analysisService()->paste();
     }
 }
 

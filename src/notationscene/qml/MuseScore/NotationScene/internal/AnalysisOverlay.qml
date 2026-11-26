@@ -256,6 +256,40 @@ Item {
 
             FlatButton {
                 visible: model.hasSelection
+                icon: IconCode.COPY
+                toolTipTitle: qsTrc("global", "Copy")
+                toolTipDescription: qsTrc("notation", "Then tap an empty spot and Paste (or paste right away: next to it)")
+
+                navigation.panel: navPanel
+                navigation.column: 25
+
+                onClicked: model.copySelection()
+            }
+
+            FlatButton {
+                visible: model.hasSelection
+                icon: IconCode.CUT
+                toolTipTitle: qsTrc("global", "Cut")
+
+                navigation.panel: navPanel
+                navigation.column: 26
+
+                onClicked: model.cutSelection()
+            }
+
+            FlatButton {
+                visible: model.canPaste
+                icon: IconCode.PASTE
+                toolTipTitle: qsTrc("global", "Paste")
+
+                navigation.panel: navPanel
+                navigation.column: 27
+
+                onClicked: model.paste()
+            }
+
+            FlatButton {
+                visible: model.hasSelection
                 icon: IconCode.DELETE_TANK
                 text: qsTrc("global", "Delete")
                 orientation: Qt.Horizontal

@@ -45,6 +45,7 @@ class AnalysisToolbarModel : public QObject, public muse::Contextable, public mu
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY stateChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY stateChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY stateChanged)
+    Q_PROPERTY(bool canPaste READ canPaste NOTIFY stateChanged)
     Q_PROPERTY(QVariantList layers READ layers NOTIFY stateChanged)
     Q_PROPERTY(QVariantList colors READ colors CONSTANT)
     Q_PROPERTY(QStringList symbols READ symbols CONSTANT)
@@ -75,6 +76,7 @@ public:
     bool canUndo() const;
     bool canRedo() const;
     bool hasSelection() const;
+    bool canPaste() const;
     QVariantList layers() const;
     QVariantList colors() const;
     QStringList symbols() const;
@@ -87,6 +89,9 @@ public:
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
     Q_INVOKABLE void deleteSelection();
+    Q_INVOKABLE void copySelection();
+    Q_INVOKABLE void cutSelection();
+    Q_INVOKABLE void paste();
     Q_INVOKABLE void clearMine();
     Q_INVOKABLE void setLayerVisible(const QString& layerId, bool visible);
     Q_INVOKABLE void addText(const QString& text);

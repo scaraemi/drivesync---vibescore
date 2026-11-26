@@ -79,6 +79,10 @@ public:
     void redo() override;
     bool hasSelection() const override;
     void deleteSelection() override;
+    void copySelection() override;
+    void cutSelection() override;
+    bool canPaste() const override;
+    void paste() override;
     void clearMyLayer() override;
 
     muse::async::Notification textRequested() const override;
@@ -153,6 +157,9 @@ private:
     AnalysisObject m_draft;
     QPointF m_draftOrigin;
     QString m_selectedId;
+    std::optional<AnalysisObject> m_clipboard;   // the copied drawing
+    std::optional<QPointF> m_pasteAt;           // canvas: the last tap on an empty spot (Select tool)
+    int m_pasteCount = 0;                       // pasting again without a new spot: each copy a bit further
     bool m_moving = false;
     QPointF m_moveStart;
     std::vector<QPointF> m_moveOriginalPoints;

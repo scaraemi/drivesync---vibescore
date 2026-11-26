@@ -100,6 +100,13 @@ public:
     virtual void redo() = 0;
     virtual bool hasSelection() const = 0;
     virtual void deleteSelection() = 0;
+
+    //! Copy and paste of the drawings (inside the app, also from one score to another). Paste puts the copy where
+    //! the last tap on an empty spot was, or next to the original.
+    virtual void copySelection() = 0;
+    virtual void cutSelection() = 0;
+    virtual bool canPaste() const = 0;
+    virtual void paste() = 0;
     //! Everything in one's own layer
     virtual void clearMyLayer() = 0;
 

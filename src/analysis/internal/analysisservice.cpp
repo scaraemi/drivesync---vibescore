@@ -796,6 +796,79 @@ void AnalysisService::deleteSelection()
     changed();
 }
 
+void AnalysisService::copySelection()
+{
+    const Layer* mine = myLayer();
+    if (!mine || m_selectedId.isEmpty()) {
+        return;
+    }
+    for (const AnalysisObject& o : mine->file.objects) {
+        if (o.id == m_selectedId) {
+            m_clipboard = o;
+            m_pasteCount = 0;
+            m_stateChanged.notify();
+            return;
+        }
+    }
+}
+
+void AnalysisService::cutSelection()
+{
+    copySelection();
+    if (m_clipboard) {
+        deleteSelection();
+    }
+}
+
+bool AnalysisService::canPaste() const
+{
+    return m_clipboard.has_value() && isAvailable();
+}
+
+void AnalysisService::paste()
+{
+    if (!canPaste()) {
+        return;
+    }
+    AnalysisObject obj = *m_clipboard;
+    obj.id = newId();
+    if (obj.points.empty()) {
+        return;
+    }
+
+    bool placed = false;
+    if (m_pasteAt) {
+        // The first point of the copy where the tap was, anchored to the measure and staff there
+        QPointF origin;
+        AnalysisObject anchored = obj;
+        if (anchorAt(PointF::fromQPointF(*m_pasteAt), anchored, origin)) {
+            const double sp = spatium();
+            const QPointF target = (*m_pasteAt - origin) / sp;
+            const QPointF delta = target - obj.points.front();
+            for (QPointF& p : anchored.points) {
+                p += delta;
+            }
+            obj = anchored;
+            placed = true;
+        }
+        m_pasteAt.reset();
+        m_pasteCount = 0;
+    }
+    if (!placed) {
+        // Next to the original (same anchor), a bit further at each paste
+        ++m_pasteCount;
+        const QPointF delta(1.5 * m_pasteCount, 1.5 * m_pasteCount);
+        for (QPointF& p : obj.points) {
+            p += delta;
+        }
+    }
+
+    pushUndo();
+    ensureMyLayer().file.objects.push_back(obj);
+    m_selectedId = obj.id;
+    changed();
+}
+
 void AnalysisService::clearMyLayer()
 {
     Layer* mine = myLayer();
@@ -846,6 +919,9 @@ bool AnalysisService::pointerPress(const PointF& pos)
     switch (m_tool) {
     case Tool::Select: {
         m_selectedId = hitTest(pos);
+        if (m_selectedId.isEmpty()) {
+            m_pasteAt = toQ(pos); // where Paste puts the copy
+        }
         if (!m_selectedId.isEmpty()) {
             const Layer* mine = myLayer();
             for (const AnalysisObject& o : mine->file.objects) {
@@ -1031,6 +1107,20 @@ bool AnalysisService::keyPress(int key, Qt::KeyboardModifiers modifiers)
     if (key == Qt::Key_Y && (modifiers & Qt::ControlModifier)) {
         redo();
         return true;
+    }
+    if (modifiers & Qt::ControlModifier) {
+        if (key == Qt::Key_C && hasSelection()) {
+            copySelection();
+            return true;
+        }
+        if (key == Qt::Key_X && hasSelection()) {
+            cutSelection();
+            return true;
+        }
+        if (key == Qt::Key_V && canPaste()) {
+            paste();
+            return true;
+        }
     }
     return false;
 }
